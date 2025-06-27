@@ -1,0 +1,39 @@
+name: FHB genetic gain assessment
+output_dir: ../docs
+navbar:
+  title: FHB genetic gain assessment
+  left:
+  - text: Home
+    href: index.html
+  - text: Preprocess Data
+    menu:
+    - text: Extract genotypic value URN Agro
+      href: extract_genoVal_URN.html
+    - text: Extract phenotypic value URN/URSN FHB
+      href: extract_genoVal_URN_URSN_FHB.html
+    - text: Explore inputs
+      href: explore_inputs.html
+  - text: Genetic gain assessment
+    menu:
+    - text: FHB genetic gain assessment
+      href: URSN_URN_FHB_GGAIN_BLUEs.html
+  - text: FHB QTL
+    menu:
+    - text: FHB QTL frequency
+      href: URN_URSN_QTL_frequency.html
+    - text: FHB QTL effect
+      href: explore_FHB_QTL_effect_URN-URSN.html
+  - text: About
+    href: about.html
+  - text: License
+    href: license.html
+  right:
+  - icon: fab fa-github
+    text: Source code
+    href: https://github.umn.edu/cbrault/FHB_GGAIN
+output:
+  workflowr::wflow_html:
+    toc: yes
+    toc_float: yes
+    theme: cosmo
+    highlight: textmate

@@ -1,0 +1,699 @@
+---
+title: "Study FHB genetic gain for the URN/URSN populations"
+author: Charlotte Brault
+output: html_document
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Libraries
+
+```{r load libraries}
+suppressPackageStartupMessages(library(here)) # root directory
+suppressPackageStartupMessages(library(data.table)) # load data
+suppressPackageStartupMessages(library(lattice)) # plot
+suppressPackageStartupMessages(library(apercu)) # ap
+suppressPackageStartupMessages(library(dplyr)) # formatting
+suppressPackageStartupMessages(library(knitr)) # table display
+suppressPackageStartupMessages(library(rmarkdown)) # table display
+suppressPackageStartupMessages(library(ggplot2)) # plot
+suppressPackageStartupMessages(library(GGally)) # pairsplot & parallel
+suppressPackageStartupMessages(library(paletteer)) # plot palette
+suppressPackageStartupMessages(library(janitor)) # formating
+suppressPackageStartupMessages(library(ggpmisc)) # add eq to ggplot
+suppressPackageStartupMessages(library(ggpubr)) # nice plots
+suppressPackageStartupMessages(library(gridExtra)) # arrange multiple plots
+suppressPackageStartupMessages(library(bigstatsr)) # theme
+suppressPackageStartupMessages(library(gt)) # table
+suppressPackageStartupMessages(library(purrr)) # handle list
+
+```
+This R chunk is used to assess how much time it takes to execute the R code in this document until the end:
+
+
+
+# Set up root directory
+
+```{r current dir}
+here::i_am("analysis/URSN_URN_FHB_GGAIN_BLUEs.Rmd")
+source(here("code","useful_functions.R"))
+```
+
+
+This R chunk is used to assess how much time it takes to execute the R code in this document until the end:
+
+```{r time_0}
+t0 <- proc.time()
+par <- "URN_URSN_FHB" ## optional parameter for fitting, for model comparison
+```
+
+
+# Load data
+
+## BLUEs
+
+Data generated in `extract_genoVal_URN_URSN_FHB.Rmd`.
+
+```{r}
+p2f <- here("output",paste0("",par,"_geno_blues_lme4-values.tsv"))
+dat <- fread(p2f, data.table = FALSE)
+dim(dat) ## 1370 x 7
+head(dat)
+purrr::map_dbl(dat, n_distinct)
+
+## extract traits as the numeric variables
+(traits <- dat %>% dplyr::select(-GID) %>% colnames())
+traits <- c("DIS","VSK","DON")
+```
+
+
+## Genotype information
+
+```{r}
+p2f <- here("data","genotype_information_URN_URSN_URNFHB.tsv")
+file.mtime(p2f)
+geno.info <- fread(p2f, data.table = FALSE)
+
+head(geno.info)
+table(geno.info$NURSERY)
+all(dat$GID %in% geno.info$GID)
+purrr::map_dbl(geno.info, n_distinct)
+dat <- merge(geno.info,dat, by="GID", all.x=F, all.y=T)
+setdiff(dat$GID, geno.info$GID) ## no GID missing
+## set he earliest year as 1995
+dat |> filter(FIRST_YEAR < 1995) |> dplyr::select(GID,SOURCE,FIRST_YEAR,NURSERY) |> distinct()
+dat[dat$FIRST_YEAR < 1995,"FIRST_YEAR"] <- 1995
+
+
+idx <- grepl("^MT", dat$GID)
+#dat[idx,c("GID","SOURCE")]
+dat$SOURCE[idx] <- "MT"
+```
+
+
+
+# Format
+
+Estimate mean genotypic value for each first year and specifically for each nursery
+
+```{r}
+dat.urn.list <- list()
+dat.ursn.list <- list()
+dat.list <- list()
+for(tr in traits){
+  dat.urn.list[[tr]] <- dat |> filter(NURSERY %in% c("BOTH","URN")) |> 
+    filter(!is.na(.data[[tr]])) |> 
+    dplyr::select(-setdiff(traits, tr)) |>
+    group_by(FIRST_YEAR) |>
+    summarize(mean=mean(.data[[tr]], na.rm = TRUE),
+              se=sd(.data[[tr]]/n(), na.rm = TRUE)) |> 
+    mutate(NURSERY="URN")
+  
+  dat.ursn.list[[tr]] <- dat |> filter(NURSERY %in% c("BOTH","URSN")) |> 
+    filter(!is.na(.data[[tr]])) |> 
+    dplyr::select(-setdiff(traits, tr)) |>
+    group_by(FIRST_YEAR) |>
+    summarize(mean=mean(.data[[tr]], na.rm = TRUE),
+              se=sd(.data[[tr]]/n(), na.rm = TRUE)) |> 
+    mutate(NURSERY="URSN") 
+  dat.list[[tr]] <- rbind(dat.urn.list[[tr]], dat.ursn.list[[tr]])
+  
+}
+
+## mean trait values 
+purrr::map(dat.list, \(x) x |>filter(FIRST_YEAR == 2024) |>
+             group_by(NURSERY))|> 
+  bind_rows(.id="trait")
+```
+
+# Estimate genetic gain statistics
+
+## Overall
+
+Estimate the genetic gain as a regression of the BLUEs against the first year of trial: $y_i = \beta_{0} + \beta_{1}x_i+ \epsilon_i$
+
+```{r}
+df.fit <- data.frame(trait=traits, intercept=NA, slope=NA, R2.adj=NA, pvalue=NA)
+#dat$FIRST_YEAR0 <- dat$FIRST_YEAR - min(dat$FIRST_YEAR) +1
+
+## estimate genetic gain with custom function
+df.fit.whole <- GGAIN(data=dat, traits=traits, first_year="FIRST_YEAR")
+eq <- c()
+for(tr in traits){
+  ## conceive the equations here
+  idx <- df.fit.whole$trait %in% tr
+  eq[tr] <- paste0("y = ",df.fit.whole[idx,"intercept"], 
+                   ifelse(df.fit.whole[idx,"slope"] > 0,"+",""),
+                   df.fit.whole[idx,"slope"], "x\n",
+                   "R2.adj = ", df.fit.whole[idx,"R2.adj"],
+                   ", p-value = ", df.fit.whole[idx,"pvalue"])
+}
+
+print_table(df.fit.whole, caption="Genetic gain estimation")
+
+```
+
+
+## For the URN/URSN nurseries
+
+Compute the slope and the intercept for each NURSERY and trait
+
+
+```{r fit_geneticGain_nursery}
+df.fit.ursn <- GGAIN(filter(dat, NURSERY %in% "URSN"), traits=traits, first_year="FIRST_YEAR")
+df.fit.ursn <- df.fit.ursn |> mutate(nursery="URSN") |> relocate(nursery, .after=trait)
+df.fit.urn <- GGAIN(filter(dat, NURSERY %in% "URN"), traits=traits, first_year="FIRST_YEAR")
+df.fit.urn <- df.fit.urn |> mutate(nursery="URN") |> relocate(nursery, .after=trait)
+
+df.fit.nurs <- bind_rows(df.fit.urn, df.fit.ursn) |>
+  mutate(trait=factor(trait,traits))|> arrange(trait)
+print_table(df.fit.nurs)
+write.table(df.fit.nurs, here("output",paste0(par,"_geneticGain_nursery.tsv")),
+            sep="\t", row.names=FALSE, quote=FALSE)
+gt(df.fit.nurs)
+#df.fit |> group_by(trait) |> gt() #|> tab_spanner(label="Nursery")
+gt(df.fit.nurs) |> 
+  gtsave(here("output","figures","table_URSN_URN_FHB_GeneticGain_summaryStat_3traits_2nurseries.tex"))
+```
+
+
+Compare URN vs. URSN values for each year with a statistical t-test
+```{r}
+tr="VSK"
+## format data
+head(dat)
+x <- dat |> filter(NURSERY %in% c("URN","BOTH"), !is.na(.data[[tr]])) |> pull(tr)
+y <- dat |> filter(NURSERY %in% c("URSN","BOTH"), !is.na(.data[[tr]])) |> pull(tr)
+tt=t.test(x,y, paired=FALSE, var.equal=TRUE)
+traits.all <- c("DIS","VSK","DON","INC","SEV","HD")
+signif.diff.nurs <- data.frame()
+
+for(tr in traits){
+  
+  tmp <- dat |> 
+    filter(NURSERY %in% c("URN","URSN"), !is.na(.data[[tr]])) |> 
+    select(-c(setdiff(traits.all, tr))) |> 
+    tidyr::pivot_wider(names_from = all_of(c("NURSERY")), values_from = all_of(tr)) |> 
+    arrange(FIRST_YEAR) |> mutate(FIRST_YEAR=as.factor(FIRST_YEAR))
+  ## remove rows with less than 3 observations for each nursery
+  years2rem <- tmp |> 
+    group_by(FIRST_YEAR) |> 
+    summarize(nURN=length(na.omit(URN)), nURSN=length(na.omit(URSN)), .groups="drop") |> 
+    filter(nURN <= 2 | nURSN <= 2) |> pull(FIRST_YEAR)
+  if(length(years2rem) > 0){
+    tmp <- tmp |> filter(!FIRST_YEAR %in% years2rem)
+  }
+  ## compute the t-test
+  tt <- tmp |> group_by(FIRST_YEAR) |> 
+    summarize(ttest.pval=t.test(URN, URSN, paired=FALSE, var.equal=TRUE)$p.value, .groups="drop") |> 
+    mutate(pval.signif=metan::stars_pval(ttest.pval),
+           trait=tr, FIRST_YEAR=as.numeric(as.character(FIRST_YEAR)))
+  signif.diff.nurs <-bind_rows(signif.diff.nurs,tt)
+}
+head(signif.diff.nurs)
+```
+
+
+## For each breeding program
+
+```{r}
+BP <- c("MT","SD","ND","MN")
+df.fit.bp <- data.frame()
+for(bp in BP){
+  tmp <- GGAIN(data=filter(dat, SOURCE %in% bp), traits=traits, first_year="FIRST_YEAR")
+  tmp$SOURCE <- bp ; tmp$n <- nrow(filter(dat, SOURCE %in% bp))
+  df.fit.bp <- rbind(df.fit.bp, tmp)
+}
+df.fit.bp <- df.fit.bp |> relocate(SOURCE, n, .after=trait) |> 
+  mutate(trait=factor(trait,traits),
+         SOURCE=factor(SOURCE,levels=BP)) |>
+  arrange(trait)
+print_table(df.fit.bp)
+
+```
+
+
+
+# Plot genetic progress
+
+## Compare the URN and URSN populations
+
+### Linear trend over all years
+
+Use the full data set for estimating the slope and confidence interval around the regression line. Use computed mean and se for each year to plot the points and error bars.
+```{r}
+plist <- list()
+year.range.plt <- range(dat$FIRST_YEAR)
+ypos.signif <- c("DIS"=1.5,"VSK"=17, "DON"=3)
+signif.diff.nurs$y <- plyr::mapvalues(signif.diff.nurs$trait, 
+                                      from=c("DIS","VSK","DON"), to=c(1.5,17,3))
+signif.diff.nurs$y <- as.numeric(signif.diff.nurs$y)
+df.fit.nurs <- df.fit.nurs |> 
+  mutate(leg=paste0(nursery," slope: ", slope, " [",slope.min,",",slope.max,"]"))
+for(tr in traits){
+  
+  plist[[tr]] <- ggplot() +
+    #geom_point(alpha=0.5,size=0.8,position=pos, mapping=aes(shape=SOURCE), show.legend=TRUE) +
+    geom_smooth(data=filter(dat, NURSERY %in% c("URN","URSN")),
+                mapping=aes(x=FIRST_YEAR, y=.data[[tr]], 
+                            color=NURSERY, fill=NURSERY),
+                method="lm", se=TRUE, show.legend=F, formula="y~x") +
+    geom_point(data=dat.list[[tr]],
+               mapping=aes(x=FIRST_YEAR, y=mean,color=NURSERY, shape=NURSERY),
+               size=2.5, alpha=1) +
+    geom_errorbar(data=dat.list[[tr]],mapping=aes(x=FIRST_YEAR,ymin=mean-se,
+                                                  ymax=mean+se,color=NURSERY))+
+    geom_text(data=filter(signif.diff.nurs, trait %in% tr),
+              mapping=aes(x=FIRST_YEAR, y=y, label=pval.signif),
+              size=3, show.legend=F, color="grey30") +
+    #labs(subtitle=eq[tr], title = tr) +
+    ylab(tr)+ xlab("First year of testing")+
+    scale_color_manual(values = c("URN"="#00BFFF","URSN"="#9A32CD"),name="Nursery",
+                       label=df.fit.nurs[df.fit.nurs$trait %in% tr,"leg"])+
+    scale_fill_manual(values = c("URN"="#00BFFF","URSN"="#9A32CD"),name="Nursery")+
+    guides(color=guide_legend(override.aes = list(size=3,alpha=1, shape=c(16,17),nrow=2)),
+           shape="none") +
+    scale_shape_manual(values=c(16,17)) +
+    bigstatsr::theme_bigstatsr(size.rel=0.8)+
+    scale_x_continuous(breaks=seq(year.range.plt[1],year.range.plt[2],5),
+                       limits=year.range.plt,
+                       minor_breaks = seq(year.range.plt[1],year.range.plt[2],1))+
+    theme(legend.position="inside",
+          legend.position.inside=c(0.78,0.88),
+          legend.direction="vertical",
+          legend.title=element_blank(),
+          legend.background=element_rect(color="grey60",fill="white",size = 0.5))
+  #plot(plist[[tr]])
+  ggsave(here("output","figures",paste0(par,"_geneticGain_regression_",tr,".png")),width=6, height=6)
+}
+plist
+#grid.arrange(grobs = plist, ncol = 2)
+# ggarrange(plotlist=plist, nrow = 3,ncol=1, labels="AUTO", common.legend = F) 
+# ggsave(here("output","figures",
+#             paste0(par,"_geneticGain_Yrregression_nurserycolor_statInside.png")), width=10, height=12,
+#        scale=0.75)
+# 
+patchwork::wrap_plots(plist, ncol=1, guides = "keep") +
+  patchwork::plot_annotation(tag_levels="A")+
+  patchwork::plot_layout(axes="collect_x") &
+  theme(plot.tag = element_text(face = "bold")) 
+ggsave(here("output","figures",
+            paste0(par,"_geneticGain_Yrregression_nurserycolor_statInside.png")), width=10, height=12,
+       scale=0.75)
+```
+
+
+### Non-linear trend
+
+```{r}
+for(tr in traits){
+  pos <- position_dodge(0.95)
+  
+  plist[[tr]] <- ggplot() +
+    geom_point(data=dat.list[[tr]],
+               mapping=aes(x=FIRST_YEAR, y=mean,color=NURSERY),
+               size=2.5, alpha=1) +
+    #geom_point(alpha=0.5,size=0.8,position=pos, mapping=aes(shape=SOURCE), show.legend=TRUE) +
+    geom_smooth(data=filter(dat, NURSERY %in% c("URN","URSN")),
+                mapping=aes(x=FIRST_YEAR, y=.data[[tr]], color=NURSERY, fill=NURSERY),
+                method="loess", se=TRUE, show.legend=F, formula="y~x") +
+    
+    
+    geom_errorbar(data=dat.list[[tr]],mapping=aes(x=FIRST_YEAR,ymin=mean-se,
+                                                  ymax=mean+se,color=NURSERY))+
+    labs(subtitle=eq[tr], title = tr) +ylab(tr)+
+    scale_color_manual(values = c("URN"="#00BFFF","URSN"="#9A32CD"),name="Nursery")+
+    scale_fill_manual(values = c("URN"="#00BFFF","URSN"="#9A32CD"),name="Nursery")+
+    guides(color=guide_legend(override.aes = list(size=3,alpha=1))) +
+    bigstatsr::theme_bigstatsr(size.rel=0.8)+
+    scale_x_continuous(breaks=seq(year.range.plt[1],year.range.plt[2],5),
+                       limits=year.range.plt,
+                       minor_breaks = seq(year.range.plt[1],year.range.plt[2],1))
+  #plot(plist[[tr]])
+}
+plist
+```
+
+There might be a stabilization of the progress since 2015
+
+
+Check mean susceptibility in 1995 and 2024:
+```{r}
+dat |> filter(FIRST_YEAR %in% c(1995,2024)) |> 
+  group_by(FIRST_YEAR) |> 
+  summarize_at(all_of(traits),.funs = list(mean=mean), na.rm = TRUE)
+
+dat |> filter(FIRST_YEAR %in% c(1995,2024), !NURSERY %in% "BOTH") |> 
+  group_by(FIRST_YEAR, NURSERY) |> 
+  summarize_at(all_of(traits),.funs = list(mean=mean), na.rm = TRUE)
+```
+
+
+
+### Plot the slope and the percentage of change
+
+
+Compare the slopes for both nurseries
+```{r}
+# g1 <- ggplot(df.fit, aes(x=trait, y=slope, fill=nursery)) +
+#   geom_bar(stat="identity", position="dodge") +
+#   geom_errorbar(aes(ymin=slope.min, ymax=slope.max),
+#                 width=0.2, position=position_dodge(0.9)) +
+#   scale_fill_manual(values = c("URN"="#00BFFF","URSN"="#9A32CD"),name="Nursery")+
+#   geom_label(aes(label=round(slope,2)),position=position_dodge(width=0.9), vjust=-0.25,label.size=0) +
+#   labs(title="Genetic gain estimation", subtitle="Slope of the regression line", x="Trait", y="Slope") +
+#   theme_bigstatsr(size.rel=0.8) +
+#   theme(axis.text.x = element_text(angle = 0, hjust = 1))
+# 
+# g2 <- ggplot(df.fit, aes(x=trait, y=percChange, fill=nursery)) +
+#   geom_bar(stat="identity", position="dodge") +
+#   scale_fill_manual(values = c("URN"="#00BFFF","URSN"="#9A32CD"),name="Nursery")+
+#   geom_text(aes(label=round(percChange,3)), position=position_dodge(width=0.9), vjust=-0.4, show.legend=F) +
+#   labs(title="Genetic gain estimation", subtitle="Percentage of change", x="Trait", y="Percentage of change") +
+#   theme_bigstatsr(size.rel=0.8) +
+#   theme(axis.text.x = element_text(angle = 0, hjust = 1),
+#         legend.position="inside",
+#         legend.position.inside=c(0.6,0.15),
+#         legend.direction="vertical",
+#         legend.background=element_rect(color="black",fill="white"))
+# g2
+# 
+# g1 <- g1 + theme(legend.position = "none", plot.title=element_blank(),
+#                  plot.subtitle=element_blank())
+# g2 <- g2 + theme(plot.title=element_blank(),
+#                  plot.subtitle=element_blank())
+# ggarrange(plotlist=list(g1,g2), nrow=1, labels="AUTO")
+# ggsave(here("output","figures","URSN_URN_FHB_slope_percChange.png"),
+#        width=10, height=5, scale=0.85)
+```
+
+
+
+
+## For each breeding program 
+
+
+```{r}
+dat.bp <- dat |> filter(SOURCE %in% BP) |> 
+  mutate(SOURCE=factor(SOURCE, levels=BP)) |> 
+  tidyr::pivot_longer(cols=all_of(traits), names_to="trait", values_to="value") |> 
+  mutate(trait=factor(trait,traits))
+dat.summ <- dat.bp |>
+  filter(!is.na(value)) |> 
+  group_by(FIRST_YEAR, SOURCE, trait) |>
+  summarize(mean=mean(value, na.rm = TRUE),
+            se=sd(value/n(), na.rm = TRUE),.groups="drop")
+pal <- c("AAFC-CA"="#F5586A",MN="#ffcc33",ND="#2E8B57",SD="#3A5FCD", MT="#bd9b04")
+
+gg <-
+  ggplot() +
+  lemon::facet_rep_wrap(~trait, scales="free_y", ncol=1) +
+  geom_smooth(data=dat.bp,
+              mapping=aes(x=FIRST_YEAR, y=value, 
+                          color=SOURCE, fill=SOURCE),
+              method="lm", se=TRUE, show.legend=F, formula="y~x") +
+  geom_point(data=dat.summ,
+             mapping=aes(x=FIRST_YEAR, y=mean,color=SOURCE),
+             size=2, alpha=1) +
+  geom_errorbar(data=dat.summ,mapping=aes(x=FIRST_YEAR,ymin=mean-se,
+                                          ymax=mean+se,color=SOURCE))+
+  # #labs(subtitle=eq[tr], title = tr) +
+  ylab("Trait value")+ xlab("First year of testing")+
+  scale_color_manual(values = pal,name="Source")+
+  scale_fill_manual(values = pal,name="Source")+
+  guides(color=guide_legend(override.aes = list(size=3,alpha=1, shape=c(16)))) +
+  scale_shape_manual(values=c(16,17)) +
+  #theme_classic(base_size=13)+
+  bigstatsr::theme_bigstatsr(size.rel=0.7)+
+  scale_x_continuous(breaks=seq(year.range.plt[1],year.range.plt[2],5),
+                     limits=year.range.plt,
+                     minor_breaks = seq(year.range.plt[1],year.range.plt[2],1))+
+  theme(legend.position="none",strip.background = element_blank(),
+        panel.spacing= unit(0, "lines"),
+        strip.text = element_text(size=10, color="black"),
+        panel.grid=element_blank())
+gg
+ggsave(here("output","figures","URSN_URN_FHB_BreedProg_GGAIN_3traits.png"),
+       width=7, height=9, scale=0.85)
+```
+
+
+
+
+Same plot without MT breeding program
+```{r}
+ggplot() +
+  lemon::facet_rep_wrap(~trait, scales="free_y", ncol=1) +
+  geom_smooth(data=filter(dat.bp, SOURCE %in% BP[-1]),
+              mapping=aes(x=FIRST_YEAR, y=value, 
+                          color=SOURCE, fill=SOURCE),
+              method="lm", se=TRUE, show.legend=F, formula="y~x") +
+  geom_point(data=filter(dat.summ, SOURCE %in% BP[-1]),
+             mapping=aes(x=FIRST_YEAR, y=mean,color=SOURCE),
+             size=2, alpha=1) +
+  geom_errorbar(data=filter(dat.summ, SOURCE %in% BP[-1]),
+                mapping=aes(x=FIRST_YEAR,ymin=mean-se,
+                            ymax=mean+se,color=SOURCE))+
+  # #labs(subtitle=eq[tr], title = tr) +
+  ylab("Trait value")+ xlab("First year of testing")+
+  scale_color_manual(values = pal,name="Source")+
+  scale_fill_manual(values = pal,name="Source")+
+  guides(color=guide_legend(override.aes = list(size=3,alpha=1, shape=c(16)))) +
+  scale_shape_manual(values=c(16,17)) +
+  #theme_classic(base_size=13)+
+  bigstatsr::theme_bigstatsr(size.rel=0.7)+
+  scale_x_continuous(breaks=seq(year.range.plt[1],year.range.plt[2],5),
+                     limits=year.range.plt,
+                     minor_breaks = seq(year.range.plt[1],year.range.plt[2],1))+
+  theme(legend.position="none",strip.background = element_blank(),
+        panel.spacing= unit(0, "lines"),
+        strip.text = element_text(size=10, color="black"),
+        panel.grid=element_blank())
+
+ggsave(here("output","figures","URSN_URN_FHB_BreedPrognoMT_GGAIN_3traits.png"),
+       width=7, height=9, scale=0.85)
+```
+
+```{r}
+dat.summ |> slice_min(FIRST_YEAR,n=2, by=SOURCE)
+tmp <- dat.summ |> select(-se) |> 
+  tidyr::pivot_wider(names_from=trait, values_from=mean) |> ungroup()
+tmp[tmp$FIRST_YEAR %in% c(1995,1997,2024),]
+
+```
+
+Plot the slope estimates
+```{r}
+
+g1 <- ggplot(df.fit.bp, aes(x=trait, y=slope, fill=SOURCE)) +
+  geom_bar(stat="identity", position="dodge") +
+  geom_errorbar(aes(ymin=slope.min, ymax=slope.max),
+                width=0.2, position=position_dodge(0.9)) +
+  scale_fill_manual(values = pal,name="Breeding program")+
+  geom_text(aes(label=round(slope,2),y=0.02), position=position_dodge(width=0.9), 
+            show.legend=F,size=3,color="grey30") +
+  labs(x="Trait", y="Slope") +
+  theme_bigstatsr(size.rel=0.8) +
+  theme(axis.text.x = element_text(size=9),
+        legend.position="bottom",legend.title.position="top")
+
+# g2 <- ggplot(df.fit.bp, aes(x=trait, y=percChange, fill=SOURCE)) +
+#   geom_bar(stat="identity", position="dodge") +
+#   scale_fill_manual(values = pal,name="Breeding program")+
+#   geom_text(aes(label=round(slope,2),y=0.05), position=position_dodge(width=0.9),size=3,color="grey30") +
+#   labs(x="Trait", y="Percentage of change") +
+#   theme_bigstatsr(size.rel=0.8) +
+#   theme(axis.text.x = element_text(size=9),
+#         legend.position="bottom",legend.title.position="top")
+# ggsave(here("output","figures","URSN_FHB_percChange_BP.png"),
+#        width=9, height=5, scale=0.85)
+
+## combine plots
+# g1 <- g1 + theme(legend.position = "none", plot.title=element_blank(),
+#                  plot.subtitle=element_blank())
+# g2 <- g2 + theme(plot.title=element_blank(),
+#                  plot.subtitle=element_blank())
+# ggarrange(plotlist=list(g1,g2), nrow=1, labels="AUTO")
+# ggsave(here("output","figures","URSN_URN_FHB_BreedProg_slope_percChange.png"),
+#        width=11, height=5, scale=0.87)
+
+
+```
+
+
+
+Combine genetic progress and slope plots
+```{r}
+ggarrange(plotlist=list(gg,g1), nrow=1, labels="AUTO")
+ggsave(here("output","figures","URSN_URN_FHB_BreedProg_slope_GGAIN_3traits.png"),
+       width=12, height=8, scale=0.85)
+
+```
+
+
+## Effect of MT genotypes
+
+```{r}
+df.fit.noMT.urn <- GGAIN(filter(dat, !SOURCE %in% "MT", NURSERY != "URSN"),
+                         traits=traits, first_year="FIRST_YEAR")
+df.fit.noMT.ursn <- GGAIN(filter(dat, !SOURCE %in% "MT", NURSERY != "URN"),
+                          traits=traits, first_year="FIRST_YEAR")
+plist.noMT <- list()
+
+for(tr in traits){
+  pos <- position_dodge(0.95)
+  dat2plot <- filter(dat, !SOURCE %in% "MT") |> droplevels()
+  
+  plist.noMT[[tr]] <- ggplot(data=dat2plot, 
+                             aes(x=FIRST_YEAR, y=.data[[tr]], color=NURSERY, fill=NURSERY)) +
+    #geom_point(alpha=0.5,size=0.8,position=pos, mapping=aes(shape=SOURCE), show.legend=TRUE) +
+    geom_smooth(data=filter(dat2plot, NURSERY %in% c("URN","URSN")),
+                method="lm", se=TRUE, show.legend=F, formula="y~x") +
+    stat_summary(data=filter(dat2plot, NURSERY %in% c("URN","URSN")),
+                 fun="mean", geom="point", size=2.5)+
+    stat_summary(data=filter(dat2plot, NURSERY %in% c("URN","URSN")),
+                 fun.data="mean_se", geom="errorbar",linewidth=0.2) +
+    #labs(subtitle = eq, title = tr) +
+    ylab(tr)+
+    scale_color_manual(values = c("URN"="#00BFFF","URSN"="#9A32CD","BOTH"="#D3D3D3"),name="Nursery")+
+    scale_fill_manual(values = c("URN"="#00BFFF","URSN"="#9A32CD","BOTH"="#D3D3D3"),name="Nursery")+
+    guides(color=guide_legend(override.aes = list(size=3,alpha=1))) +
+    bigstatsr::theme_bigstatsr(size.rel=0.8)+
+    scale_x_continuous(breaks=seq(year.range.plt[1],year.range.plt[2],5),
+                       limits=year.range.plt,
+                       minor_breaks = seq(year.range.plt[1],year.range.plt[2],1))
+  plot(plist.noMT[[tr]])
+  
+}
+
+## combine for both nurseries
+
+df.fit.noMT <- bind_rows(df.fit.noMT.urn |> mutate(nursery="URN",.after=trait) ,
+                         df.fit.noMT.ursn |> mutate(nursery="URSN",.after=trait)) |> 
+  mutate(trait=factor(trait,levels=traits)) |>arrange(trait)
+print_table(df.fit.noMT, caption="Genetic gain estimation without MT genotypes")
+
+```
+
+Calculate the percentage of increase when including MT on the genetic gain (slope)
+
+```{r}
+df.fit.noMT
+df.fit.nurs
+df.fit.nurs$leg <- NULL
+df.gt <- bind_rows(mutate(df.fit.nurs, pop="With Montana genotypes"),
+                   mutate(df.fit.noMT, pop="Without Montana genotypes")) |> relocate(pop) |> group_by(pop)
+
+
+#gt(df.gt) |> gtsave(here("output","figures","table_URSN_URN_FHB_GeneticGain_summaryStat_3traits_2nurseries_with-withoutMT.docx"))
+gt(df.gt) |> gtsave(here("output","figures","table_URSN_URN_FHB_GeneticGain_summaryStat_3traits_2nurseries_with-withoutMT.tex"))
+
+gt(df.gt)
+```
+
+
+
+
+Plot the difference between when MT is excluded or not
+```{r}
+tr <- "DIS"
+dat2plot <- dat |> select(-INC,-SEV,-HD)|>
+  tidyr::pivot_longer(cols=all_of(traits), names_to="trait", values_to="value") |> 
+  mutate(ISMT=ifelse(SOURCE %in% "MT", TRUE,FALSE)) |> 
+  filter(!NURSERY %in% "BOTH")|> 
+  mutate(trait=factor(trait,traits)) |> arrange(trait)
+
+dat2plot |> group_by(trait,ISMT) |> summarize(value=mean(value, na.rm=T), .groups="drop") 
+
+ggplot(dat2plot,aes(x=FIRST_YEAR, y=value,color=ISMT))+
+  facet_grid(trait~NURSERY, scale="free_y")+
+  stat_summary(fun="mean", geom="point", size=2.5)+
+  stat_summary(fun.data="mean_se", geom="errorbar",linewidth=0.2,show.legend=F) +
+  labs(y="Genotypic trait value", x="First year of testing")+
+  theme_bigstatsr(size.rel=0.8)+
+  scale_x_continuous(breaks=seq(year.range.plt[1],year.range.plt[2],5),
+                     minor_breaks = seq(year.range.plt[1],year.range.plt[2],1))+
+  scale_color_manual(values=c("#364C54FF","#bd9b04"),name="Is MT")+
+  theme(legend.position="inside",
+        legend.direction="horizontal",
+        legend.position.inside=c(0.75,0.95),
+        legend.background=element_rect(color="black",fill="white"))
+ggsave(here("output","figures","URSN_URN_FHB_MT-effect-GGAIN.png"),
+       width=8, height=7, scale=0.85)
+```
+
+
+
+# Study non-genetic effect
+
+```{r}
+p2f <- here("output","lme4","URN_URSN_FHB_year_effects_fixed_lme4.rds")
+yearEff <- readRDS(p2f)
+ap(yearEff)
+
+tbl.yrEff <- yearEff |> dplyr::bind_rows(.id="trait") |> 
+  filter(trait %in% traits) |>
+  tidyr::pivot_longer(cols=-trait,names_to="year", values_to="yearEff") |> 
+  mutate(year=as.integer(year), trait=factor(trait,levels=traits)) |> 
+  filter(year >= 1995, !is.na(yearEff))
+
+tbl.yrEff |> split(tbl.yrEff$trait) |> 
+  map(\(df) lm(yearEff ~ year, data = df)) |>
+  map(summary) |> map_dfr(broom::tidy, .id="trait")
+
+ggplot(tbl.yrEff, aes(x=year, y=yearEff)) +
+  facet_wrap(~trait, scales="free_y")+
+  geom_point(aes(color=trait), size=2.5, alpha=0.8, show.legend=F) +
+  geom_smooth()+ bigstatsr::theme_bigstatsr(size.rel=0.8)+
+  # ggpmisc::stat_poly_eq(aes(label = ..eq.label..), 
+  #                       formula = y ~ x, parse = TRUE)+
+  ggpmisc::stat_fit_glance(aes(label=sprintf("italic(P)*\"-value = \"*%.3g", 
+                                             after_stat(p.value))), parse = TRUE)
+```
+
+
+
+# Plot genetic correlation between traits
+
+```{r plot_corr}
+# ggcorr(dplyr::select(dat,traits),label=TRUE, label_size=5, geom="tile",max_size=11,
+#        low="#FF3D7FFF", mid="#E0E4CCFF",high="#69D2E7FF", size=6,label_round=2)
+
+dat$NURSERY <- as.factor(dat$NURSERY)
+plot(metan::corr_coef(dat,traits, use="pairwise.complete.obs"),
+     col.low = "red",col.mid = "white",col.high = "forestgreen",
+     size.text.cor = 5,signif="stars",
+     size.text.signif = 5,
+     size.text.lab = 15)
+ggsave(here("output","figures","URSN_URN_FHB_corr_genoVal.png"),
+       width=6, height=6, scale=0.85)
+```
+
+# Study the FHB resistance for each breeding program
+
+```{r}
+dat.long <- dat |> select(-INC,-SEV,-HD) |> 
+  tidyr::pivot_longer(cols=traits, names_to="trait", values_to="value")
+ggplot(filter(dat.long, !NURSERY %in% "BOTH", SOURCE %in% c("ND","SD","MN","MT")),
+       aes(x=SOURCE, y=value,color=NURSERY))+
+  facet_wrap(~trait, scales="free", ncol=3)+
+  geom_boxplot(fill=NA) + 
+  theme_bigstatsr(size.rel=0.8)
+```
+
+
+
+
+
+# Appendix
+
+```{r info}
+t1 <- proc.time(); t1 - t0
+print(sessionInfo(), locale=FALSE)
+```
+
+
+

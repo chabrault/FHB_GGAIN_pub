@@ -1,0 +1,323 @@
+---
+title: "Create inputs for FHB_GGAIN project"
+author: Charlotte Brault
+output: html_document
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Libraries
+
+```{r load libraries}
+suppressPackageStartupMessages(library(here)) # root directory
+suppressPackageStartupMessages(library(data.table)) # load data
+suppressPackageStartupMessages(library(apercu)) # ap
+suppressPackageStartupMessages(library(dplyr)) # formatting
+suppressPackageStartupMessages(library(purrr)) # list handling
+suppressPackageStartupMessages(library(ggvenn)) # Venn diagram
+suppressPackageStartupMessages(library(bigstatsr)) # theme
+suppressPackageStartupMessages(library(stringr)) # string handling
+suppressPackageStartupMessages(library(janitor)) # formatting
+suppressPackageStartupMessages(library(forcats)) # order factors
+suppressPackageStartupMessages(library(ggh4x)) # nice plot
+suppressPackageStartupMessages(library(gt)) # nice tables
+suppressPackageStartupMessages(library(ggridges)) # ridge plot
+
+```
+This R chunk is used to assess how much time it takes to execute the R code in this document until the end:
+
+
+
+# Set up root directory
+
+```{r current dir}
+here::i_am("analysis/explore_inputs.Rmd")
+source(here("code","useful_functions.R"))
+```
+
+
+This R chunk is used to assess how much time it takes to execute the R code in this document until the end:
+
+```{r time_0}
+t0 <- proc.time()
+```
+
+
+# Load inputs
+
+```{r}
+input <- readRDS(here("data","all_inputs_URN_URSN_URNFHB.rds"))
+ap(input)
+map(input, \(x) map_dfr(x,n_distinct)) 
+dat <- input$ALL
+dat.fhb <- fread(here("data","dat_FHB_URSN_URNFHB.tsv"))
+traits.ursn <- c("DIS","VSK","DON")
+dat.info <- input$INFO
+map_dbl(dat.info, n_distinct)
+dat.ursn <- input$URSN
+dat.urn.fhb <- input$URN.FHB
+
+gid.ursn <- unique(input$URSN$GID)
+gid.urn <- unique(input$URN$GID)
+gid.urn.fhb <- unique(input$URN.FHB$GID)
+gid.all <- unique(dat$GID)
+kasp.gid <- unique(input$KASP$GID)
+length(gid.all)
+setdiff(input$URSN$LOC, input$URN$LOC) # 1 location in URSN not in URN FHB
+all(kasp.gid %in% gid.all)
+length(intersect(kasp.gid, gid.all))
+length(intersect(kasp.gid, input$INFO$GID)) # 1286
+```
+
+Key numbers:
+
+* URSN: 817 GID, 11 LOC, 30 YEARS
+
+* URN: 1035 GID, 44 LOC, 57 YEARS
+
+* URN FHB: 701 GID, 19 LOC, 31 YEARS
+
+* ALL: 1758 GID, 45 LOC, 57 YEARS
+
+# Explore data
+
+
+## Experimental design
+
+Plot a 3-panels heatmap of the number of genotypes tested in each location-year combination for the URN, URN FHB and URSN populations.
+
+```{r exp_design}
+# dat.exp <- rbind(dat.urn[,c("GID","LOC","YEAR","NURSERY")],
+#                  dat.urn.fhb[,c("GID","LOC","YEAR","NURSERY")],
+#                  dat.ursn[,c("GID","LOC","YEAR","NURSERY")])
+dat.exp <- dat |> select(GID, LOC, YEAR, NURSERY) 
+loc.info <- fread(here("data","URN_trial_info.csv")) |> rename(LOC=name_short)
+
+dat.exp |> group_by(LOC,YEAR,NURSERY) |> 
+  summarize(n=n(),.groups="drop") |> 
+  mutate(LOC=as.factor(LOC)) |> 
+  left_join(loc.info) |> 
+  mutate(LOC.st=paste0(LOC,"&",state_short),
+         state_short=as.factor(state_short),
+         state_short=forcats::fct_infreq(state_short))|>
+  arrange(state_short) |>  
+  mutate(LOC.st=fct_inorder(LOC.st)) |>
+  ggplot(aes(x=LOC.st,y=YEAR, fill=n))+
+  facet_wrap(~NURSERY, ncol=1)+
+  geom_tile() + 
+  paletteer::scale_fill_paletteer_c("grDevices::ag_Sunset") +
+  theme_bigstatsr(size.rel=0.8)+
+  labs(x="Location", y="Year", fill="Number of genotypes")+
+  guides(x = legendry::guide_axis_nested(),
+         fill=guide_colorbar(barwidth=15,label.position="bottom"))+
+  theme(axis.text.x = element_text(angle = 90, vjust =0.5),
+        legend.direction="horizontal",legend.position="bottom",
+        legend.title.position="top",legend.title = element_text(hjust=0.5,size=12),
+        legend.text = element_text(size=10),
+        strip.background = element_blank())
+ggsave(here("output","figures","URN_URN-FHB_URSN_experimental_design_heatmap.png"), width=8, height=6)
+```
+
+
+
+## Distribution
+
+```{r geom_density}
+
+for(tr in traits.ursn){
+  plot(ggplot(dat.fhb, aes(x=(.data[[tr]]), fill=NURSERY, color=NURSERY))+
+         geom_density( alpha=0.5)+
+         ggtitle(tr)+
+         geom_rug()+ xlab(tr)+
+         bigstatsr::theme_bigstatsr(size.rel=0.8)+
+         paletteer::scale_colour_paletteer_d("colorblindr::OkabeIto_black") +
+         paletteer::scale_fill_paletteer_d("colorblindr::OkabeIto_black") +
+         theme(legend.position = "bottom"))
+}
+```
+
+```{r ggridges_HD, fig.height=8, fig.width=5}
+dat2plot <- dat.fhb |> 
+  dplyr::select(YEAR, NURSERY, HD) |> distinct() |> 
+  filter(!is.na(HD)) |> mutate(YEAR=as.factor(YEAR))
+dat2plot$YEAR <- droplevels(as.factor(dat2plot$YEAR))
+table(dat2plot$YEAR)
+ggplot(data=dat2plot, aes(x=HD, y=YEAR, fill=NURSERY)) +
+  geom_density_ridges(alpha=0.5) +
+  theme_bigstatsr(size.rel=0.8)
+```
+
+
+
+```{r geom_points}
+for(tr in traits.ursn){
+  plot(ggplot(dat.fhb, aes(x=GID, y=.data[[tr]],color=LOC))+
+         geom_point(size=1, alpha=0.5)+
+         facet_wrap(~NURSERY)+
+         ggtitle(tr)+
+         theme_bigstatsr(size.rel=0.8)+
+         guides(color=guide_legend(override.aes = list(size=3,alpha=1), ncol=8))+
+         scale_color_manual(values=pal_loc()[dat.fhb$LOC])+
+         theme(legend.position = "bottom",
+               axis.text.x = element_blank(),
+               panel.grid.major.x = element_blank()))
+}
+```
+
+
+## Genotype composition
+
+```{r}
+## detect the genotypes tested in both nurseries
+gid.both <- intersect(gid.ursn, gid.urn)
+dat.info |> group_by(NURSERY,FIRST_YEAR) |> 
+  summarise(n=n()) |> filter(FIRST_YEAR >= 1995) |> 
+  ggplot(aes(x=FIRST_YEAR, y=n, fill=NURSERY))+
+  geom_col(color="white")+ ylab("Number of genotypes") + xlab("First Year")+
+  theme_bigstatsr(size.rel=0.8)+
+  scale_x_continuous(breaks=seq(1995,2024,5))+
+  paletteer::scale_fill_paletteer_d("colorblindr::OkabeIto_black", name="Nursery") +
+  theme(panel.grid = element_blank(),legend.position = "bottom")
+
+ggsave(here("output","figures","URN_URSN_genotype_composition_firstYear.png"), width=8, height=6)
+
+```
+Genotype composition by source for each nursery, including genotypes tested in both nurseries
+```{r}
+pal <- c("AAFC-CA"="#F5586A",MN="#ffcc33",ND="#2E8B57",SD="#3A5FCD",
+         MT="#bd9b04",PRIVATE="#8A42C9",OTHER="grey30")
+geno.compo <- rbind(data.frame(GID=gid.ursn, NURSERY="URSN"),
+                    data.frame(GID=gid.urn.fhb, NURSERY="URN"))
+geno.compo <- merge(geno.compo, dat.info[,c("GID","SOURCE","FIRST_YEAR")], by="GID", all.x=TRUE)
+geno.compo |> group_by(SOURCE,NURSERY,FIRST_YEAR) |> 
+  summarise(n=n()) |> filter(FIRST_YEAR >= 1995) |> 
+  ggplot(aes(x=FIRST_YEAR, y=n, fill=SOURCE))+
+  facet_wrap(~NURSERY)+
+  geom_col(color="white")+ ylab("Number of genotypes") + xlab("First Year")+
+  theme_bigstatsr(size.rel=0.8)+
+  scale_x_continuous(breaks=seq(1995,2024,5))+
+  scale_fill_manual(values=pal)+
+  #paletteer::scale_fill_paletteer_d("colorblindr::OkabeIto_black", name="Nursery") +
+  theme(panel.grid = element_blank(),legend.position = "bottom")
+ggsave(here("output","figures","URSN_URN_FHB_genotype_composition_source_1995-2024.png"),
+       width=8, height=5, scale=0.9)
+```
+
+
+## Phenotypic correlation
+
+### Between nurseries
+
+```{r}
+corr.nurseries <- c()
+for(tr in traits.ursn){
+  
+  dat.fhb |>  dplyr::summarise(n = dplyr::n(), .by = c(GID, LOC, YEAR, ENV, NURSERY)) |>
+  dplyr::filter(n > 1L)
+  dat2plot <- dat.fhb |> dplyr::select(GID, LOC, YEAR, ENV, NURSERY, tr) |>
+    tidyr::pivot_wider(names_from = NURSERY, values_from = tr) |> 
+    filter(!is.na(URSN) | !is.na(URN_FHB))
+  
+  summary(dat2plot$URSN)
+  corr.nurseries[tr] <- round(cor(dat2plot$URSN, dat2plot$URN_FHB, use="pairwise.complete.obs"),3)
+  plot(ggplot(dat2plot, aes(x=URSN, y=URN_FHB))+
+         geom_point()+
+         geom_abline(slope=1, intercept=0, linetype="dashed", color="grey30")+
+         ggtitle(tr)+
+         theme_bigstatsr(size.rel=0.8)+
+         theme(legend.position = "bottom"))
+}
+corr.nurseries
+```
+
+### Between traits
+
+```{r}
+GGally::ggcorr(dat.ursn[,traits.ursn], label=TRUE, label_size=5, geom="tile",max_size=11,
+               low="#FF3D7FFF", mid="#E0E4CCFF",high="#69D2E7FF",
+               size=6,label_round=2)+
+  ggtitle("URSN")
+GGally::ggcorr(dat.urn.fhb[,traits.ursn], label=TRUE, label_size=5, geom="tile",max_size=11,
+               low="#FF3D7FFF", mid="#E0E4CCFF",high="#69D2E7FF",
+               size=6,label_round=2)+
+  ggtitle("URN FHB")
+```
+
+
+## Key numbers for publication
+
+```{r}
+purrr::map_dbl(dat.fhb, n_distinct)
+purrr::map_dbl(dat.ursn, n_distinct)
+purrr::map_dbl(dat.urn.fhb, n_distinct)
+length(intersect(unique(dat.ursn$GID), unique(dat.urn.fhb$GID))) ## 125
+length(intersect(unique(dat.ursn$LOC), unique(dat.urn.fhb$LOC))) ## 8
+length(intersect(unique(dat.ursn$YEAR), unique(dat.urn.fhb$YEAR))) ## 28
+dat.fhb |> group_by(NURSERY, ENV) |> summarize(n=n()) |> 
+  group_by(NURSERY) |> summarize(n_mean=mean(n),
+                                 n_min=min(n),
+                                 n_max=max(n))
+```
+
+# Build table of fit information for URN and URSN
+
+Data generated in `extract_genoVal_URN_URSN_FHB.Rmd` and `extract_genoVal_URN.Rmd` scripts.
+
+TODO: add crop ontology codes
+
+```{r}
+fit.agro <- fread(here("output","URN_lme4_fit-info_all_traits.tsv")) |> 
+  mutate(pop="URN Agro", .before=trait) |> 
+  filter(trait %in% c("YLD","PROT","TWT"))
+fit.fhb <- fread(here("output","URN_URSN_FHB_lme4_fit-info_all_traits.tsv")) |> 
+  mutate(pop="URN FHB & URSN", .before=trait) |> filter(trait %in% c("DIS","VSK","DON"))
+
+
+fit.info <- rbind(fit.agro, fit.fhb)
+
+
+gt.format <- fit.info |>
+  gt(groupname_col="pop",
+     row_group_as_column = TRUE) |> 
+  cols_align("center") |> 
+  # tab_header(
+  #   title = "Fit information for URN and URSN populations",
+  #   subtitle = "LME4 model fit information for all traits"
+  # ) |> 
+  cols_label(
+    trait = "Trait",
+    pop = "Population",
+    transformation = "Transformation",
+    missing.data.percent = "Missing data (%)",
+    fixed.effects = "Fixed effects",
+    random.effects = "Random effects",
+    min = "Min.", max="Max.", mean="Mean",sd="Standard deviation",
+    reliability = "Reliability",
+    ngeno = "Number of genotypes",
+    nobs = "Number of observations"
+  ) |> 
+  fmt_number(columns=2:8, decimals=0) |> 
+  fmt_number(columns=9, decimals=2) |> 
+  # tab_options(row_group.padding=px(4),
+  #             data_row.padding = px(2),
+  #   summary_row.padding = px(3)) |> 
+  opt_stylize(style = 5, color = 'gray')
+gt.format
+gtsave(gt.format, here("output","figures","table_URN_URSN_lme4_fit-info_all_traits.png"),
+        zoom=2, expand=5)
+
+gtsave(gt.format, here("output","figures","table_URN_URSN_lme4_fit-info_all_traits.tex"))
+```
+
+
+
+# Appendix
+
+```{r info}
+t1 <- proc.time(); t1 - t0
+print(sessionInfo(), locale=FALSE)
+```
+

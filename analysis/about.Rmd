@@ -1,0 +1,10 @@
+---
+title: "About"
+output:
+  workflowr::wflow_html:
+    toc: false
+editor_options:
+  chunk_output_type: console
+---
+
+This project aims to study the genetic gain and the effect of some major QTL (quantitative trait locus) for the hard red spring wheat resistance for Fusarium head blight (FHB) resistance. The project was funded by the [U.S Wheat and Barley Scab Initiative (USWBSI)](https://scabusa.org/home-page).

@@ -1,0 +1,420 @@
+---
+title: "Study the presence of FHB QTLs in the URN/URSN population"
+author: Charlotte Brault
+output: html_document
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Libraries
+
+```{r load libraries}
+suppressPackageStartupMessages(library(here)) # root directory
+suppressPackageStartupMessages(library(data.table)) # load data
+suppressPackageStartupMessages(library(apercu)) # ap
+suppressPackageStartupMessages(library(dplyr)) # formatting
+suppressPackageStartupMessages(library(ggplot2)) # plot
+suppressPackageStartupMessages(library(paletteer)) # plot palette
+suppressPackageStartupMessages(library(janitor)) # formatting
+suppressPackageStartupMessages(library(vcfR)) # handle vcf
+suppressPackageStartupMessages(library(forcats)) # reorder factor 
+suppressPackageStartupMessages(library(plotly)) # plot interactive
+suppressPackageStartupMessages(library(ggpubr)) #nice plot   
+suppressPackageStartupMessages(library(cowplot)) # combine plots   
+suppressPackageStartupMessages(library(ggbeeswarm)) # nice plot  
+suppressPackageStartupMessages(library(bigstatsr)) # nice plot  
+suppressPackageStartupMessages(library(ggrepel)) # plot text  
+suppressPackageStartupMessages(library(CGPfunctions)) # two-way anova  
+suppressPackageStartupMessages(library(easystats)) # anova eta squared  
+
+```
+
+
+# Set up 
+
+```{r current dir}
+## set up root directory: indicate the local path from the project root 
+here::i_am("analysis/explore_FHB_QTL_effect.Rmd")
+## load custom functions, for example, 'format_curate_vcf'
+source(here("code","useful_functions.R")) 
+pop_code <- "URN_URSN"
+```
+
+
+This R chunk is used to assess how much time it takes to execute the R code in this document until the end:
+
+```{r time_0}
+t0 <- proc.time()
+```
+
+# Load data
+
+Data generated in `URN_URSN_QTL_analysis_3KGenoArray.Rmd`.
+
+```{r }
+# pop_code <- "URN_URSN"
+# p2f <- here("output","URN_URSN_genoVal_Fhb1.tsv")
+# file.mtime(p2f)
+# gv.qtl <- fread(p2f,data.table=F)
+# print_table(head(gv.qtl,n=50))
+# (traits <- colnames(gv.qtl)[12:ncol(gv.qtl)])
+# ## table with source and nursery
+# gv.qtl$SOURCE[gv.qtl$SOURCE %in% c("OTH",NA)] <- "OTHER"
+# table(gv.qtl$SOURCE, gv.qtl$NURSERY)
+# gv.qtl$SOURCE <- forcats::fct_lump_n(gv.qtl$SOURCE, n=6,other_level ="OTHER")
+# gv.qtl |> select(GID, NURSERY, SOURCE) |> filter(SOURCE %in% "OTHER") |> distinct()
+
+```
+
+Load QTL information from KASP markers, generated in `URN_URSN_QTL_analysis_MAS.Rmd`.
+
+```{r}
+p2f <- here("output",paste0("URN_URSN_geno_FHB_QTLs_combined.tsv"))
+file.mtime(p2f)
+df.qtls <- fread(p2f,data.table=F)
+head(df.qtls)
+dim(df.qtls)
+```
+Load genotype information and genotypic values
+
+```{r}
+p2f <- here("data","genotype_information_URN_URSN_URNFHB.tsv")
+file.mtime(p2f)
+geno.info <- fread(p2f, data.table = FALSE)
+head(geno.info)
+
+```
+
+* URN population
+
+
+```{r}
+dat.urn <- fread(here("output","URN_geno_blues_lme4-values.tsv"))
+head(dat.urn)
+summary(dat.urn$HD)
+dim(dat.urn) ## 1011 x 8
+```
+
+
+
+* URSN population
+
+```{r}
+dat.fhb <- fread(here("output","URN_URSN_FHB_geno_blues_lme4-values.tsv"), data.table=F)
+dim(dat.fhb) # 1370 x 7
+head(dat.fhb)
+length(unique(dat.fhb$GID))
+# ## remove heading date trait because already present in URN and URSN data
+# dat.fhb$HD <- NULL
+```
+
+
+* Combine URN and URSN data
+
+```{r}
+dat <- merge(dat.urn, dat.fhb, by="GID", all=TRUE)
+## combine heading date trait because already present in URN and URSN data
+dat$HD <- coalesce(dat$HD.x, dat$HD.y) 
+dat <- dat |> select(-HD.x, -HD.y)
+print_table(head(dat, n=100))
+traits <- colnames(dat)[-1]
+```
+
+
+# Format data
+
+```{r}
+## add genotypic values to QTL information
+gv.qtl <- merge(df.qtls, dat, by="GID",  all.x=T, all.y=F)
+gv.qtl.init=gv.qtl
+## add genotype information to QTL information
+gv.qtl <- merge(gv.qtl, 
+                geno.info,#[,c("GID",setdiff(colnames(geno.info),colnames(df.qtls)))],
+                by="GID", all.x=T, all.y=F)
+
+#cb <- cbind(gv.qtl$FIRST_YEAR.x, gv.qtl$FIRST_YEAR.y)
+#gv.qtl$FIRST_YEAR <- coalesce(gv.qtl$FIRST_YEAR.x, gv.qtl$FIRST_YEAR.y)
+gv.qtl$FIRST_YEAR <- dplyr::coalesce(gv.qtl$FIRST_YEAR.y, gv.qtl$FIRST_YEAR.x) 
+gv.qtl$SOURCE <- dplyr::coalesce(gv.qtl$SOURCE.x, gv.qtl$SOURCE.y)
+gv.qtl$NURSERY <- dplyr::coalesce(gv.qtl$NURSERY.x, gv.qtl$NURSERY.y)
+
+#gv.qtl$SOURCE[gv.qtl$SOURCE %in% c("OTH",NA)] <- "OTHER"
+
+gv.qtl <- gv.qtl |> dplyr::select(-FIRST_YEAR.x, -FIRST_YEAR.y, -SOURCE.x, -SOURCE.y,
+                                  -NURSERY.x,-NURSERY.y)
+print_table(head(gv.qtl))
+
+## put traits at the end of the table
+gv.qtl <- gv.qtl |> relocate(all_of(traits), .after="FIRST_YEAR")
+```
+
+
+# Study QTL effects
+
+
+## Fhb1 effect on FHB by source
+
+```{r Fhb1_effect}
+FHB.traits <- c("DIS","VSK","DON")
+BPs <- c("AAFC-CA","MN","ND","SD","MT")
+
+pal <- c("AAFC-CA"="#F5586A",MN="#ffcc33",ND="#2E8B57",SD="#3A5FCD", MT="#bd9b04")
+
+for(tr in FHB.traits){
+  dat.fit <- gv.qtl |>
+    dplyr::select(all_of(c("GID","FIRST_YEAR","SOURCE", "allele", tr))) |> 
+    filter(!is.na(.data[[tr]]),FIRST_YEAR > 2001,
+           allele %in% c("Unk","Res","Sus"),SOURCE %in% BPs)
+  cat(tr)
+  fit <- lm(paste0(tr, "~ FIRST_YEAR + allele+ SOURCE"), data=dat.fit)
+  print(summary(fit))
+  tabyl(dat.fit, SOURCE, allele)
+  
+  ## two-way ANOVA
+  
+  fct <- Plot2WayANOVA(formula =as.formula(paste0(tr,"~ allele*SOURCE")),
+                       dataframe=dat.fit, errorbar.display = "CI",
+                       mean.color = "white",mean.label = TRUE,
+                       ggplot.component = 
+                         list(scale_color_manual(values=pal),
+                              scale_fill_manual(values=pal)))
+  ## remove the effect of first year beforehand?
+  pos <- position_jitter(width = 0.01,height=0,seed=22)
+  print_table(fct$MeansTable)
+  ggplot(fct$MeansTable, aes(x=SOURCE, y=TheMean, color=allele, 
+                             ymin=LowerBoundCI,ymax=UpperBoundCI, group=allele))+
+    geom_point(size=3,position=pos) + 
+    geom_errorbar(width=0.1, position=pos)+
+    ggtitle(paste0("Estimate of Fhb1 allelic effect on ",tr))+
+    ylab("Fhb1 effect on VSK") + xlab("Breeding program")+
+    geom_line(position=pos, linewidth=0.8, linetype="dotted") +
+    theme_bigstatsr()+ scale_color_manual(values=c("Res"="#0D803B","Sus"="#AD151A","Unk"="grey60"))
+}
+
+```
+
+## Fhb1 effect on 6 traits
+
+```{r}
+traits.fhb <- c("DIS","VSK","DON")
+plist <- list()
+traits.sel <- c(traits.fhb, "YLD","PROT","TWT")
+plt.arr <- list(nudgey=c(DIS=2,VSK=3,DON=2,YLD=100,PROT=-0.8,TWT=-2),
+                yeta=c(DIS=65,VSK=90,DON=44,YLD=4750,PROT=16.7,TWT=83.5),
+                ysignif=c(DIS=69,VSK=96,DON=47,YLD=4900,PROT=16.8,TWT=84),
+                ymax=c(DIS=79,VSK=108.5,DON=55,YLD=5300,PROT=17.8,TWT=86.5))
+
+for(tr in traits.sel){
+  dat2plot <- gv.qtl |>
+    dplyr::select(all_of(c("GID","FIRST_YEAR","SOURCE", "allele", tr))) |> 
+    filter(!is.na(.data[[tr]]),
+           #FIRST_YEAR > 2001,
+           allele %in% c("Res","Sus")) |> mutate(allele=factor(allele, levels=c("Res","Sus"),
+                                                               labels=c("Resistant","Susceptible")))
+  cat(tr)
+  ## Estimate the effect of Fhb1 on the trait while controlling for the first year
+  fit <- lm(paste0(tr, "~ FIRST_YEAR + allele"), data=dat2plot)
+  print(summary(fit))
+  pval <- anova(fit)[["Pr(>F)"]][2]
+  emm <- as.data.frame(emmeans::emmeans(fit, specs = "allele") )
+  eta2 <- eta_squared(fit)
+  
+  ## add mean value in the two categories
+  #summ.text <- dat2plot |> group_by(allele) |> summarize(mean=mean(.data[[tr]]))
+  
+  ## add number of obs
+  xlabs <- paste(levels(dat2plot$allele),"\n(N=",table(dat2plot$allele),")",sep="")
+  
+  plist[[tr]] <- ggplot(dat2plot, aes(x=allele, y=.data[[tr]], color=FIRST_YEAR))+
+    geom_quasirandom(alpha=0.3, width=0.25, size=0.8)+
+    
+    geom_boxplot(fill=NA,lwd=1, show.legend=F, outliers = FALSE, width=0.25, color="maroon")+
+    stat_summary(fun=mean, geom="point",position=position_dodge(0.85),shape=4,size=4, stroke=1.2, color="black")+
+    xlab(paste0("Fhb1 allele"))+
+    ## expand the y axis with mult
+    scale_y_continuous(limits=c(min(dat2plot[[tr]], na.rm=T), plt.arr$ymax[tr]))+
+    scale_x_discrete(labels=xlabs)+
+    guides(color=guide_colorbar(barwidth=12 ))+
+    
+    geom_label_repel(data=emm, aes(x=allele, y=emmean, label=round(emmean,2)), 
+                     color="black", size=4, nudge_x=0.38, 
+                     nudge_y=plt.arr$nudgey[tr], min.segment.length=0)+
+    
+    #stat_compare_means(comparisons = list(c("Res","Sus")))+ # Add significance levels
+    ggsignif::stat_signif(comparisons = list(c("Resistant","Susceptible")), 
+                          #test="wilcox.test",
+                          annotations=sprintf("p = %.2g", pval),
+                          #map_signif_level = function(p) sprintf("p = %.2g", p),
+                          y_position=plt.arr$ysignif[tr], vjust=-0.5)+
+    
+    annotate("text",label=paste0("\u03b7\u00b2 = ",round(eta2$Eta2_partial[2],4)),
+             x=1.5, y=plt.arr$yeta[tr],size=4, color="black")+
+    
+    scale_color_viridis_c( name="First year")+
+    theme_bigstatsr(size.rel=0.75) +
+    theme(legend.position="bottom", legend.direction="horizontal",
+          legend.title.position = "top",
+          axis.text.x=element_text(size=10), axis.title.x=element_blank())
+  plot(plist[[tr]])
+  rm(fit, dat2plot)
+}
+ggarrange(plotlist=plist, ncol=2, nrow=3,common.legend = TRUE, legend="bottom",labels = "AUTO")
+ggsave(here("output","figures",paste0(pop_code,"_Fhb1_effects_6traits_distrib.png")),
+       height=8,width=11,scale=0.85)
+```
+
+
+## Fhb1 effect on yield
+
+### Fit linear regression with first year as a covariate
+
+```{r}
+pal.res <- c("Sus"="#09283CFF","Res"="#3CC8C0FF", "Het"="firebrick","Unk"="grey70")
+
+head(gv.qtl)
+dat.fit <- gv.qtl |> dplyr::select(GID, FIRST_YEAR,QTL.name, allele, YLD) |>
+  filter(!is.na(YLD), QTL.name == "Fhb1") |> distinct() |>
+  mutate(allele=factor(allele, levels=c("Unk","Res","Sus","Het")))
+
+
+ggplot(dat.fit, aes(x=FIRST_YEAR, fill=allele))+
+  geom_bar(position="fill")+
+  ylab("Frequency of Fhb1")+xlab("First year of testing")+
+  scale_fill_manual(values=pal.res)+
+  theme_bigstatsr(size.rel=0.8)+
+  scale_x_continuous(breaks=seq(1960,2025,5),minor_breaks = seq(1960,2025,1))+
+  scale_y_continuous(labels=scales::percent_format())+
+  theme(legend.position="bottom")
+
+# fit <- lm(YLD ~ FIRST_YEAR + allele, data=dat.fit)
+# summary(fit)
+# plot(fit)
+
+
+dat.fit.subyr <- dat.fit |> filter(FIRST_YEAR >=2001, allele %in% c("Res","Sus")) |> droplevels()
+dat.fit.subyr.fac <- dat.fit.subyr |> mutate(FIRST_YEAR=as.factor(FIRST_YEAR))
+
+fit <- lm(YLD ~ FIRST_YEAR + allele, data=dat.fit.subyr)
+summary(fit)
+plot(fit)
+```
+
+
+
+### Add boxplot and histogram to the plot
+
+```{r}
+## Histogram of Fhb1 frequency
+phist <- ggplot(dat.fit.subyr.fac, aes(x=FIRST_YEAR, fill=allele))+
+  geom_bar()+ 
+  labs(y="Number of genotypes", x="First year of testing")+
+  scale_fill_manual(values=pal.res)+
+  theme_bigstatsr(size.rel=0.8)+
+  theme(legend.position="none", axis.text.x=element_blank(),
+        axis.title.x=element_blank())
+
+## boxplot
+pbox <- ggplot(dat.fit.subyr.fac, aes(x=FIRST_YEAR, y=YLD, color=allele))+
+  #stat_summary(fun=sd, geom="pointrange",position=position_dodge(0.95))+
+  
+  #stat_sum_df("mean_sdl", fun.args = list(mult = 1), mapping = aes(group = df.qtls))+
+  
+  #stat_summary(fun=sd, geom="pointrange",position=position_dodge(0.95))+
+  #stat_summary(fun=mean, geom="point")+
+  #add_summary("mean_sd")+
+  geom_point(alpha=0.6, size=1,position=position_dodge(0.85))+
+  geom_boxplot(position=position_dodge(0.85), fill=NA, show.legend=F)+
+  xlab("First year of testing") +
+  guides(color=guide_legend(override.aes=list(shape=19,size=3,alpha=1)))+
+  scale_color_manual(values=pal.res, name="QTL allele")+
+  theme_bigstatsr(size.rel=0.8)+
+  theme(legend.position="bottom", axis.text.x=element_text(angle=-30,hjust=0, vjust=0.5))
+
+pbox
+
+p <- cowplot::plot_grid(phist, pbox, ncol=1, align="v", rel_heights=c(1,2))
+plot(p)
+ggsave(filename=here("output","figures","Fhb1_effect_yield_2001-2023_boxplot_histogram.png"),
+       plot=p,height=6, width=9, scale=0.9)
+```
+
+Two-way ANOVA
+```{r}
+dat.fit.subyr.fac <- filter(dat.fit.subyr.fac, allele %in% c("Res","Sus")) |> droplevels()
+Plot2WayANOVA(YLD ~ FIRST_YEAR * allele, data=dat.fit.subyr.fac,
+              mean.label = TRUE)
+```
+
+### Subsample for studying Fhb1 effect on yield
+
+```{r}
+dat.fhb1.effect <- gv.qtl |> 
+  filter(QTL.name == "Fhb1", allele %in% c("Res","Sus"), FIRST_YEAR >= 2001) |> 
+  select(GID, FIRST_YEAR, allele, YLD) |> 
+  filter(!is.na(YLD)) |> 
+  droplevels()
+summary(dat.fhb1.effect$YLD)
+nreps <- 10
+
+yr.range <- range(dat.fhb1.effect$FIRST_YEAR, na.rm=T)
+df.fit <- expand.grid(year=seq(yr.range[1], yr.range[2], 1),
+                      rep=c(1:nreps),effect.res=NA, pvalue.res=NA, n=NA)
+for(yr in seq(yr.range[1], yr.range[2], 1)){
+  tmp <- dat.fhb1.effect |> filter(FIRST_YEAR == yr) |> droplevels()
+  if(length(unique(tmp$allele)) == 2){
+    tab <- table(tmp$allele) ; tab <- tab[order(tab)]
+    allele.min <- names(tab)[1]
+    allele.max <- names(tab)[2]
+    n <- min(tab)
+    for(r in c(1:nreps)){
+      ## subsample n genotypes from the allele.max to study the difference between alleles
+      dat.fit <- tmp |> 
+        filter(allele == allele.max) |> 
+        sample_n(n, replace=FALSE) |> 
+        bind_rows(filter(tmp, allele == allele.min)) |> 
+        mutate(allele=factor(allele, levels=c("Sus","Res")))
+      
+      ## fit ANOVA
+      fit <- lm(YLD ~  1+ allele, data=dat.fit)
+      
+      ## extract estimate and pvalue from regression
+      est <- summary(fit)$coefficients[2,1]
+      pval <- summary(fit)$coefficients[2,4]
+      idx <- which(df.fit$year == yr & df.fit$rep == r)
+      df.fit[idx, c("effect.res","pvalue.res","n")] <- c(est, pval, n)
+    }
+  }
+}
+df.fit <- df.fit |> filter(n > 3) |> arrange(year) |> mutate(signif=ifelse(pvalue.res < 0.05, "yes", "no"))
+ggplot(df.fit, aes(x=year, y=effect.res, color=signif))+
+  geom_point(aes(size=n), show.legend=T)+ 
+  scale_color_manual(values=c("yes"="firebrick","no"="grey70"))+
+  scale_size(range = c(1,4),guide = "none") +
+  theme_bigstatsr(size.rel=0.8)+
+  scale_x_continuous(breaks=seq(2001,2024,2),minor_breaks = seq(2001,2024,1) )+
+  geom_hline(yintercept=0, linetype="dashed", color="grey50")+
+  ylab("Fhb1 effect on yield")+ xlab("First year of testing")+
+  guides(color=guide_legend(title="Significant effect", override.aes=list(shape=19, size=3)))
+```
+
+
+
+# Study Fhb5
+
+```{r}
+
+```
+
+
+
+# Appendix
+
+```{r info}
+t1 <- proc.time(); t1 - t0
+print(sessionInfo(), locale=FALSE)
+```
+
+

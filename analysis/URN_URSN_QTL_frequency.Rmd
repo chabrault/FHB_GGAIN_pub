@@ -1,0 +1,432 @@
+---
+title: "Analyze major QTL presence in the URN/URSN populations"
+author: Charlotte Brault
+output: html_document
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Libraries
+
+```{r load libraries}
+suppressPackageStartupMessages(library(here)) # root directory
+suppressPackageStartupMessages(library(data.table)) # load data
+suppressPackageStartupMessages(library(apercu)) # ap
+suppressPackageStartupMessages(library(dplyr)) # formatting
+suppressPackageStartupMessages(library(ggplot2)) # plot
+suppressPackageStartupMessages(library(paletteer)) # plot palette
+suppressPackageStartupMessages(library(janitor)) # formatting
+suppressPackageStartupMessages(library(forcats)) # reorder factor 
+suppressPackageStartupMessages(library(plotly)) # plot interactive
+suppressPackageStartupMessages(library(ggpubr)) #nice plot   
+suppressPackageStartupMessages(library(ggbeeswarm)) # nice plot  
+suppressPackageStartupMessages(library(bigstatsr)) # nice plot  
+suppressPackageStartupMessages(library(CGPfunctions)) # two-way anova  
+suppressPackageStartupMessages(library(ComplexUpset)) # upset plot
+suppressPackageStartupMessages(library(gghighlight)) # nice plot label
+suppressPackageStartupMessages(library(slider)) # sliding window
+
+```
+
+
+# Set up 
+
+```{r current dir}
+## set up root directory: indicate the local path from the project root 
+here::i_am("analysis/URN_URSN_QTL_frequency.Rmd")
+## load custom functions, for example, 'format_curate_vcf
+source(here("code","useful_functions.R")) 
+corresp.list <- readRDS(here("code","list_corresp_genotype_name.rds"))
+## define a code for this population, to put in file names
+pop_code <- "URN_URSN"
+```
+
+
+This R chunk is used to assess how much time it takes to execute the R code in this document until the end:
+
+```{r time_0}
+t0 <- proc.time()
+```
+
+
+
+```{r}
+input <- readRDS(here("data","all_inputs_URN_URSN_URNFHB.rds"))
+kasp <- input$KASP
+mas.tabL.FHB <- kasp
+geno.info <- input$INFO
+table(geno.info$SOURCE)
+```
+
+
+# Combine all KASP markers same QTL
+
+```{r combine_kasps}
+qtl.desc <- mas.tabL.FHB |> select(QTL.name, KASP.name) |> distinct()
+print_table(qtl.desc)
+#df.qtls <- mas.tabL.FHB
+
+df.qtls <- data.frame()
+
+for(q in unique(mas.tabL.FHB$QTL.name)){
+  tmp <- mas.tabL.FHB |> filter(QTL.name == q) |> 
+    dplyr::select(-QTL.allele) |> 
+    tidyr::pivot_wider(names_from=KASP.name, values_from=allele) |> 
+    as.data.frame()
+  
+  #  mas.tabL.FHB |> filter(QTL.name == q) |> select(-QTL.allele) |> 
+  # dplyr::summarise(n = dplyr::n(), .by = c(GID, FIRST_YEAR, QTL.name, KASP.name)) |>
+  # dplyr::filter(n > 1L)
+  
+  ## determine the final allele => Unk if inconsistent, the common one otherwise
+  if(ncol(tmp) == 4){ ## means only one KASP marker for a given QTL
+    final.all <- tmp[,4]
+  } else{
+    final.all <- apply(tmp[,4:ncol(tmp)], 1, function(x){
+      if(length(unique(x)) > 1) {
+        return("Unk")
+      } else {
+        return(unique(x))
+      }
+    })
+  }
+  df.qtls <- rbind(df.qtls, data.frame(GID=tmp$GID, FIRST_YEAR=tmp$FIRST_YEAR, 
+                                       QTL.name=q, allele=c(final.all)))
+}
+
+dim(df.qtls)
+head(df.qtls)
+```
+
+Add genotype information
+```{r}
+df.qtls <- merge(df.qtls,geno.info, all=F)
+head(df.qtls)
+dim(df.qtls)
+#df.qtls$QTL.name[df.qtls$QTL.name == "Fhb5AS(PI277012)"] <- "Fhb5AS"
+```
+
+
+
+<!-- # Export -->
+
+<!-- ```{r} -->
+<!-- p2f <- here("output",paste0(pop_code,"_geno_FHB_QTLs_combined.tsv")) -->
+<!-- write.table(file=p2f, df.qtls, sep="\t", quote=FALSE, row.names=FALSE) -->
+<!-- ``` -->
+
+
+
+
+# Allelic frequency
+
+## For 3 QTLs
+
+```{r three_qtls_freq}
+#mas.tabL.FHB$QTL.name <- recode(mas.tabL.FHB$QTL.name, "Fhb5AS(PI277012)"="Fhb5AS")
+pal.res <- c("Sus"="#09283CFF","Res"="#3CC8C0FF", "Het"="firebrick","Unk"="grey70")
+
+dat2plot <- mas.tabL.FHB |> 
+  filter(!is.na(FIRST_YEAR)) |> 
+  dplyr::group_by(KASP.name, QTL.name, allele, FIRST_YEAR) |>
+  summarise(n = n(), .groups = "drop") |> 
+  tidyr::pivot_wider(names_from = allele, values_from = n) |> 
+  mutate(across(all_of(c("Res","Sus","Unk")), metan::replace_na)) |> 
+  group_by(KASP.name,QTL.name,FIRST_YEAR) |> 
+  summarize(n=Res + Sus + Unk,
+            freq= (Res / (Res + Sus + Unk)), .groups="drop") |> 
+  arrange(FIRST_YEAR) |>
+  mutate(KASP.name=factor(KASP.name, levels=unique(qtl.desc$KASP.name))) |>
+  group_by(KASP.name,QTL.name) |>
+  ## 5-year sliding window
+  mutate(freq.slid=slider::slide_dbl(freq, mean, .before = 5)) |>
+  arrange(FIRST_YEAR, KASP.name) |>
+  filter(n >=3)   ## remove years with too few genotypes
+
+## plot
+ggplot(dat2plot,aes(x=FIRST_YEAR, y=freq.slid, color=KASP.name))+
+  #lemon::geom_pointline()+
+  geom_point() + geom_line(alpha=0.5, lwd=1.2)+
+  facet_wrap(~QTL.name, nrow=3)+
+  theme_bigstatsr(size.rel=0.8)+
+  paletteer::scale_color_paletteer_d("MetBrewer::Tsimshian") +
+  scale_y_continuous(labels = scales::percent)+
+  scale_x_continuous(breaks=seq(1925,2020,10), limits=range(dat2plot$FIRST_YEAR))+
+  # gghighlight::gghighlight(line_label_type="ggrepel_label") +
+  ylab("Frequency of FHB resistance allele")+ xlab("First year of testing")+
+  guides(color=guide_legend(title="KASP marker",nrow=2))+
+  theme(legend.position="bottom",
+        legend.direction="vertical",
+        strip.background = element_blank())
+ggsave(here("output","figures",paste0(pop_code,"_Fhb1-5-freq_first-year_5-yr-window_v2.png")),
+       width=8, height=7, scale=0.9)
+
+```
+
+
+
+## For Fhb1
+
+With the two KASP markers combined: IFA-FM227 and Fhb1-TaHRC-R-HEX-DEL-F.
+
+### Overall
+
+```{r fhb1_freq}
+pal.res <- c("Sus"="#09283CFF","Res"="#3CC8C0FF", "Het"="firebrick","Unk"="grey70")
+
+df.qtls |> filter(QTL.name %in% "Fhb1") |> 
+  ggplot(aes(x=FIRST_YEAR,fill=allele))+
+  #facet_wrap(~KASP.name)+
+  scale_fill_manual(values=pal.res)+
+  geom_bar()+ 
+  ylab("Number of genotypes") +
+  xlab("First year of testing") +
+  bigstatsr::theme_bigstatsr(size.rel=0.8)+
+  theme(legend.position="bottom",
+        legend.direction="horizontal")
+ggsave(here("output","figures",paste0(pop_code,"_geno-nb_first-year_Fhb1_all.png")),
+       height=6,width=7,scale=0.9)
+
+
+## look at individual markers
+mas.tabL.FHB |> filter(QTL.name %in% "Fhb1") |> 
+  ggplot(aes(x=FIRST_YEAR,fill=allele))+
+  facet_wrap(~KASP.name)+
+  scale_fill_manual(values=pal.res)+
+  geom_bar()+ 
+  ylab("Number of genotypes") +
+  xlab("First year of testing") +
+  bigstatsr::theme_bigstatsr(size.rel=0.8)+
+  theme(legend.position="bottom",
+        legend.direction="horizontal")
+
+df.qtls |> filter(QTL.name %in% "Fhb1", allele == "Res") |> 
+  arrange(FIRST_YEAR) |> head(n=10)
+mas.tabL.FHB |> filter(QTL.name %in% "Fhb1", allele == "Res", FIRST_YEAR < 1995) |> 
+  arrange(GID) |> head(50)
+
+tmp <- mas.tabL.FHB |> filter(QTL.name %in% "Fhb5AS",  FIRST_YEAR == 2022) 
+table(tmp$allele)
+```
+
+
+
+### By source
+
+```{r fhb1_freq_by_source}
+pal <- c("AAFC-CA"="#F5586A",MN="#ffcc33",ND="#2E8B57",SD="#3A5FCD",
+         MT="#bd9b04",PRIVATE="#8A42C9",OTHER="grey30")
+
+
+table(df.qtls$SOURCE)
+dat2plot <- df.qtls |> 
+  filter(FIRST_YEAR >=1995, QTL.name == "Fhb1",!is.na(SOURCE)) |> 
+  mutate(SOURCE=forcats::fct_lump_n(SOURCE, n=6,other_level ="OTHER")) |>
+  dplyr::group_by(SOURCE, QTL.name, allele, FIRST_YEAR) |>
+  summarise(n = n(), .groups = "drop") |> 
+  tidyr::pivot_wider(names_from = allele, values_from = n) |> 
+  mutate(across(all_of(c("Res","Sus","Unk")), \(x) metan::replace_na(x,,"Unk"))) |>
+  group_by(SOURCE,QTL.name,FIRST_YEAR) |> 
+  summarize(n=Res + Sus + Unk,freq=(Res / n), .groups="drop") |> 
+  arrange(FIRST_YEAR) |>  
+  group_by(SOURCE, QTL.name) |>
+  ## 5-year sliding window
+  mutate(freq.slid=slider::slide_dbl(freq, mean, .before = 5))
+dat2plot |> arrange(desc(FIRST_YEAR)) |> mutate(FIRST_YEAR=as.factor(FIRST_YEAR)) |> print_table()
+
+## plot
+ggplot(dat2plot,aes(x=FIRST_YEAR, y=freq.slid, color=SOURCE))+
+  geom_point(show.legend=T,size=2.5)+
+  geom_line(lwd=1.5,alpha=0.5, show.legend=F)+
+  scale_color_manual(values=pal)+
+  scale_fill_manual(values=pal)+
+  scale_x_continuous(breaks=seq(1995,2025,5),minor_breaks = seq(1995,2025,1))+
+  scale_size(range = c(1.5,6),guide = "none") +
+  theme_bigstatsr(size.rel=0.8)+
+  gghighlight::gghighlight(line_label_type="ggrepel_label", label_params =list(nudge_x=1.5, alpha=0.7, min.segment.length=0)) +
+  scale_y_continuous(labels = scales::percent)+
+  ylab("Frequency of Fhb1 allele")+ xlab("First year of testing")+
+  # guides(color=guide_legend(title="Source", 
+  #                           override.aes=list(shape=19, size=3)))+
+  guides(color="none")
+# theme(legend.position="bottom")
+ggsave(here("output","figures",paste0(pop_code,"_Fhb1_freq_by-source_first-year_5-yr-window_v2.png")),
+       height=5,width=7,scale=0.9)
+```
+
+
+### By nursery
+
+```{r fhb1_freq_by_nursery}
+spl.data <- split(df.qtls, df.qtls$NURSERY)
+spl.data$URN <- bind_rows(spl.data$URN, spl.data$BOTH) |> mutate(NURSERY = "URN")
+spl.data$URSN <- bind_rows(spl.data$URSN, spl.data$BOTH) |> mutate(NURSERY = "URSN")
+spl.data$BOTH <- NULL
+spl.data <- rbind(spl.data$URSN, spl.data$URN)
+table(spl.data$NURSERY)
+
+dat2plot <- spl.data |> 
+  filter(FIRST_YEAR >=1995) |> 
+  dplyr::group_by(NURSERY, QTL.name, allele, FIRST_YEAR) |>
+  summarise(n = n(), .groups = "drop") |> 
+  tidyr::pivot_wider(names_from = allele, values_from = n) |> 
+  mutate(across(all_of(c("Res","Sus","Unk","Het")),\(x) metan::replace_na(x,"Unk"))) |>
+  group_by(NURSERY, QTL.name,FIRST_YEAR) |> 
+  summarize(n=Res + Sus + Unk + Het,freq=(Res / n), .groups="drop") |> 
+  arrange(FIRST_YEAR) |>  
+  group_by(NURSERY, QTL.name) |>
+  ## 5-year sliding window
+  mutate(freq.slid=slider::slide_dbl(freq, mean, .before = 5))
+dat2plot |> arrange(desc(FIRST_YEAR)) |> mutate(FIRST_YEAR=as.factor(FIRST_YEAR)) |> print_table()
+
+ggplot(dat2plot,aes(x=FIRST_YEAR, y=freq.slid, color=NURSERY, group=NURSERY, shape=NURSERY))+
+  #facet_wrap(~QTL.name, nrow=3)+lemon::coord_capped_cart(bottom="both")+
+  lemon::facet_rep_wrap(.~QTL.name, nrow=3,repeat.tick.labels = F)+
+  geom_point(size=2.5,show.legend=T)+
+  geom_line(lwd=1.5,alpha=0.5, show.legend=F)+
+  theme_bigstatsr(size.rel=0.7)+
+  scale_color_manual(values = c("URN"="#00BFFF","URSN"="#9A32CD"),name="Nursery")+
+  scale_shape_manual(values=c(16,17), "Nursery") +
+  scale_x_continuous(breaks=seq(1995,2026,5),minor_breaks = seq(1995,2026,1))+
+  guides(color=guide_legend(title="Nursery", 
+                            override.aes=list(shape=c(16,17), size=3)))+
+  # gghighlight::gghighlight(line_label_type="ggrepel_label",calculate_per_facet=T,
+  #                          label_params=list(nudge_x=1)) +
+  scale_y_continuous(labels = scales::percent)+
+  ylab("Frequency of FHB resistance allele")+
+  xlab("First year of testing")+
+  theme(legend.position="inside",
+        legend.position.inside=c(0.8,0.03),
+        legend.direction="horizontal",
+        legend.background = element_rect(fill="white",color="grey40"),
+        strip.background = element_blank(),
+        panel.spacing = unit(0, "lines"),
+        panel.grid.major = element_line(colour="grey40", linewidth = 0.05),
+        panel.grid.minor.x = element_line(colour="grey75", linewidth = 0.025))
+ggsave(here("output","figures",paste0(pop_code,"_Fhb1_freq_by-nursery_first-year_5-yr-window_v2.png")),
+       height=7,width=7,scale=0.9)
+```
+
+
+Statistics mixing URN and URSN populations together
+```{r}
+spl.data |> 
+  filter(FIRST_YEAR >=1995) |> 
+  dplyr::group_by(QTL.name, allele, FIRST_YEAR) |>
+  summarise(n = n(), .groups = "drop") |> 
+  tidyr::pivot_wider(names_from = allele, values_from = n) |> 
+  mutate(across(all_of(c("Res","Sus","Unk","Het")),\(x) metan::replace_na(x,"Unk"))) |>
+  group_by( QTL.name,FIRST_YEAR) |> 
+  summarize(n=Res + Sus + Unk + Het,freq=(Res / n), .groups="drop") |> 
+  filter(FIRST_YEAR %in% c(2022, 2024)) 
+```
+
+
+## For Fhb5
+
+```{r fhb5_freq}
+df.qtls |> filter(QTL.name %in% "Fhb5") |> 
+  ggplot(aes(x=FIRST_YEAR,fill=allele))+
+  #facet_wrap(~KASP.name)+
+  scale_fill_manual(values=pal.res)+
+  geom_bar()+ 
+  ylab("Number of genotypes") +
+  xlab("First year of testing") +
+  bigstatsr::theme_bigstatsr(size.rel=0.8)+
+  theme(legend.position="bottom",
+        legend.direction="horizontal")
+
+## look at individual markers
+mas.tabL.FHB |> filter(QTL.name %in% "Fhb5") |> 
+  ggplot(aes(x=FIRST_YEAR,fill=allele))+
+  facet_wrap(~KASP.name)+
+  scale_fill_manual(values=pal.res)+
+  geom_bar()+ 
+  ylab("Number of genotypes") +
+  xlab("First year of testing") +
+  bigstatsr::theme_bigstatsr(size.rel=0.8)+
+  theme(legend.position="bottom",
+        legend.direction="horizontal")
+```
+
+## For Fhb5AS
+
+```{r fhb5AS_freq}
+df.qtls |> filter(QTL.name %in% "Fhb5AS") |> 
+  ggplot(aes(x=FIRST_YEAR,fill=allele))+
+  #facet_wrap(~KASP.name)+
+  scale_fill_manual(values=pal.res)+
+  geom_bar()+ 
+  ylab("Number of genotypes") +
+  xlab("First year of testing") +
+  bigstatsr::theme_bigstatsr(size.rel=0.8)+
+  theme(legend.position="bottom",
+        legend.direction="horizontal")
+
+## with a 5-yr sliding window
+
+```
+
+
+## Table of frequency
+
+```{r frequency_table}
+gtsummary::tbl_summary(df.qtls, by=QTL.name, include="allele")
+
+```
+
+
+# Study coincidence of QTLs
+
+```{r qtl_coincidence}
+mas.tabL.FHB |> select(QTL.name, KASP.name) |> distinct() |> print_table()
+## Fhb1
+tmp.qtl <- mas.tabL.FHB |> filter(QTL.name == "Fhb1") |> 
+  select(-QTL.name,-QTL.allele) |> distinct() |> 
+  tidyr::pivot_wider(names_from=KASP.name, values_from=allele) |>
+  mutate(`Fhb1-TaHRC-R-HEX-DEL-F`=factor(`Fhb1-TaHRC-R-HEX-DEL-F`, levels=c("Res","Sus","Het","Unk"))) |>
+  mutate(`IFA-FM227`=factor(`IFA-FM227`, levels=c("Res","Sus","Het","Unk")))
+caret::confusionMatrix(tmp.qtl$`Fhb1-TaHRC-R-HEX-DEL-F`, tmp.qtl$`IFA-FM227`)
+gtsummary::tbl_cross(tmp.qtl, row="Fhb1-TaHRC-R-HEX-DEL-F",col="IFA-FM227", percent="cell")
+
+
+## Fhb5
+tmp.qtl <- mas.tabL.FHB |> filter(QTL.name == "Fhb5") |> 
+  select(-QTL.name,-QTL.allele) |> distinct() |> 
+  tidyr::pivot_wider(names_from=KASP.name, values_from=allele) |>
+  mutate(`GENE-3371_56`=factor(`GENE-3371_56`, levels=c("Res","Sus","Het","Unk"))) |>
+  mutate(IWA6412=factor(IWA6412, levels=c("Res","Sus","Het","Unk")))
+caret::confusionMatrix(tmp.qtl$`GENE-3371_56`, tmp.qtl$IWA6412)
+gtsummary::tbl_cross(tmp.qtl, row="GENE-3371_56",col="IWA6412", percent="cell")
+
+## coincidence of all Fhb5
+tmp.qtl <- mas.tabL.FHB |> filter(KASP.name %in% c("IWA6412","IWA5528")) |> 
+  select(-QTL.name,-QTL.allele) |> distinct() |> 
+  tidyr::pivot_wider(names_from=KASP.name, values_from=allele) |>
+  mutate(IWA5528=factor(IWA5528, levels=c("Res","Sus","Het","Unk"))) |>
+  mutate(IWA6412=factor(IWA6412, levels=c("Res","Sus","Het","Unk")))
+caret::confusionMatrix(tmp.qtl$IWA5528, tmp.qtl$IWA6412)
+gtsummary::tbl_cross(tmp.qtl, row="IWA5528",col="IWA6412", percent="cell")
+```
+
+
+# Export
+
+```{r}
+p2f <- here("output",paste0(pop_code,"_geno_FHB_QTLs_combined.tsv"))
+write.table(df.qtls, file=p2f, sep="\t", quote=FALSE, row.names=FALSE)
+```
+
+
+
+# Appendix
+
+```{r info}
+t1 <- proc.time(); t1 - t0
+print(sessionInfo(), locale=FALSE)
+```
+
+

@@ -1,0 +1,52 @@
+---
+title: "Home FHB genetic gain"
+site: workflowr::wflow_site
+output:
+  workflowr::wflow_html:
+    toc: false
+    toc_number_sections: true
+editor_options:
+  chunk_output_type: console
+---
+
+# Generate input data
+
+- [Format phenotypic and genotypic data](explore_inputs.html). In this script, we load phenotypic data for the URN, URN FHB and the URSN population to combine them, extract genotype information and genotypic data. Some data exploration was done, such as trait distribution, population composition, and phenotypic correlation.
+
+
+```{r, echo=FALSE, out.width = '75%', fig.cap='Genetic composition of the URN and URSN populations'}
+knitr::include_graphics("../output/figures/URSN_URN_FHB_genotype_composition_source_1995-2024.png", error = FALSE)
+```
+
+
+
+- [Extract FHB genotypic values](extract_genoVal_URN_URSN_FHB.html). In this script, we extract the genotypic values (BLUEs) for the URN FHB and URSN population for FHB-related traits. We also estimate the genetic correlation between traits.
+
+- [Extract agronomic genotypic values](extract_genoVal_URN.html). In this script, we extract the genotypic values (BLUEs) for the URN population for agronomic-related traits. We also estimate the genetic correlation between traits.
+
+# Calculate genetic gain
+
+- [Genetic gain from BLUEs](URSN_URN_FHB_GGAIN_BLUEs.html). In this script, we calculate the genetic gain for the URN and URSN population for FHB-related traits. Input data used were BLUEs of phenotypic data, estimated in `extract_genoVal_URN_URSN_FHB.Rmd`. The study was focused on three FHB traits: DON (mycotoxin), DIS (disease index) and VSK (visual scabby kernel).
+
+
+```{r, echo=FALSE, out.width = '75%', fig.cap='Genetic gain for 3 FHB traits in the URN and URSN populations'}
+knitr::include_graphics("../output/figures/URN_URSN_FHB_geneticGain_Yrregression_nurserycolor_statInside.png", error = FALSE)
+```
+
+
+# Study FHB resistance QTLs
+
+
+- [Frequency of major FHB related genes](URN_URSN_QTL_frequency.html) In this script, we study the presence of several FHB resistance QTLs in the URN and URSN population. We use the KASP marker data to identify the presence of QTL.
+
+
+```{r, echo=FALSE, out.width = '75%', fig.cap='FHB QTL frequency over time in the URN and URSN populations'}
+knitr::include_graphics("../output/figures/URN_URSN_Fhb1_freq_by-nursery_first-year_5-yr-window.png", error = FALSE)
+```
+
+- [Effect of FHB QTLs on FHB and agronomic traits](explore_FHB_QTL_effect_URN-URSN.html). In this script, we study the effect of FHB resistance QTLs on agronomic and FHB traits in the URN and URSN population. 
+
+
+```{r, echo=FALSE, out.width = '75%', fig.cap='Fhb1 effect on FHB and agronomic traits in the URN and URSN populations'}
+knitr::include_graphics("../output/figures/URN_URSN_Fhb1_effects_6traits_distrib_v2.png", error = FALSE)
+```

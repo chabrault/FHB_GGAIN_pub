@@ -1,0 +1,593 @@
+---
+title: "Extract genotypic values for URN and URSN FHB phenotypic data"
+author: Charlotte Brault, adapted from Timothée Flutre
+output: html_document
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Libraries
+
+```{r load libraries}
+suppressPackageStartupMessages(library(here)) # root directory
+suppressPackageStartupMessages(library(data.table)) # load data
+suppressPackageStartupMessages(library(lattice)) # plot
+suppressPackageStartupMessages(library(apercu)) # ap
+suppressPackageStartupMessages(library(dplyr)) # formatting
+suppressPackageStartupMessages(library(knitr)) # table display
+suppressPackageStartupMessages(library(rmarkdown)) # table display
+suppressPackageStartupMessages(library(gtsummary)) # data summary
+suppressPackageStartupMessages(library(ggplot2)) # plot
+suppressPackageStartupMessages(library(GGally)) # pairsplot & parallel
+suppressPackageStartupMessages(library(paletteer)) # plot palette
+suppressPackageStartupMessages(library(janitor)) # formating
+suppressPackageStartupMessages(library(tidyr)) # pivot
+suppressPackageStartupMessages(library(crosstable)) # crosstable
+suppressPackageStartupMessages(library(stringr)) # string
+suppressPackageStartupMessages(library(stringdist)) # string distance
+suppressPackageStartupMessages(library(rutilstimflutre)) # LMM devtools timflutre
+suppressPackageStartupMessages(library(lmerTest))
+suppressPackageStartupMessages(library(boot)) #bootstraping
+suppressPackageStartupMessages(library(bigstatsr)) # plot theme
+
+```
+
+
+# Set up root directory
+
+```{r current dir}
+here::i_am("analysis/extract_genoVal_URN_URSN_FHB.Rmd")
+source(here("code","useful_functions.R"))
+```
+
+
+This R chunk is used to assess how much time it takes to execute the R code in this document until the end:
+
+```{r time_0}
+t0 <- proc.time()
+par <- "URN_URSN_FHB" ## optional parameter for fitting, for model comparison
+```
+
+
+# Load phenotypic data
+
+
+Data was curated in `create_inputs_explore.Rmd`. [See report](docs/create_inputs_explore.html)
+
+
+```{r load_phenotypic_data, warning=FALSE}
+p2f <- here("data","dat_FHB_URSN_URNFHB.tsv")
+file.mtime(p2f)
+dat = fread(p2f, data.table = FALSE)
+dim(dat) ## 12610 x 11
+head(dat)
+(traits <- sapply(dat, class) %>% {.[.=="numeric"]} %>% names())
+info.cols <- setdiff(colnames(dat),traits)
+dat <- dat %>% mutate_at(all_of(info.cols), as.factor)
+#dat <- rename(dat, "GID"="line","SW30"="30SSW")
+(miss.dat.perc <- round(100* (nrow(dat) -apply(dat, 2,function(x) sum(!is.na(x)))) /nrow(dat)))
+summ.traits <- as.data.frame(apply(t(apply(dat[,traits],2,summary)),2,round, 1))
+summ.traits$SD <- round(apply(dat[,traits],2,sd,na.rm=TRUE),1)
+summ.traits$traits <- rownames(summ.traits)
+print_table(as.data.frame(summ.traits))
+```
+
+Apply transformation 
+```{r}
+
+transf <- c(DIS="sqrt", VSK="sqrt",SEV="sqrt", INC="squared",DON="log10",HD="none")
+## apply transformation to ensure normality and homoscedasticity
+dat <- dat |> 
+  mutate(DIS = sqrt(DIS),
+         VSK = sqrt(VSK),
+         SEV = sqrt(SEV),
+         INC = INC^2,
+         DON = log10(DON))
+
+for(tr in traits){
+  plot(ggplot(dat, aes(x=(.data[[tr]])))+
+         geom_density( alpha=0.5, fill="grey50")+
+         ggtitle(tr)+ geom_rug()+ xlab(tr)+
+         bigstatsr::theme_bigstatsr(size.rel=0.8))
+  
+}
+```
+
+
+
+# Model fitting, comparison and selection
+
+## Fitting the global model
+
+```{r model_fit_comp_sel_fixed_geno, warning=FALSE}
+out <- list()
+dat.noNA <- list()
+for(tr in traits){
+  write(paste0(tr,"\n"),stderr())
+  dat.noNA[[tr]] <- na.omit(droplevels(dat[,c(tr, "GID","NURSERY","YEAR","LOC")]))
+  
+  if(length(unique(as.character(dat.noNA[[tr]]$YEAR))) < 2){
+    next
+  } else {
+    glob.form <- paste0(tr, " ~ 1",
+                        " + GID ",
+                        " + NURSERY",
+                        " + YEAR ",
+                        " + (1|LOC) ",
+                        " + (1|YEAR:LOC)"
+                        
+                        
+    )
+    
+    out[[tr]] <- plantTrialLmmFitCompSel(glob.form=glob.form,
+                                         dat=dat.noNA[[tr]],
+                                         part.comp.sel=c("fixed","random"),
+                                         nb.cores=1, verbose=1,
+                                         saved.file = here("output","lme4",paste0("lme4_save_fit_",tr,"_",par, ".RData"))
+    )
+    
+  }
+}
+```
+
+
+Problematic traits: those with one YEAR of phenotyping (no rep to estimate BLUP)
+
+```{r}
+(pbm <- names(which(unlist(lapply(out, class)) == "try-error")))
+```
+
+Amount of missing data:
+```{r miss_dat}
+dat <- janitor::remove_empty(dat,which=c("rows", "cols"))
+ngeno <- unlist(lapply(dat.noNA,function(x) length(unique(x$GID))))
+```
+
+
+## Handle case where "geno" is not kept in the final model
+
+```{r refit}
+for(tr in traits[!traits %in% pbm]){
+  if(! "GID" %in% out[[tr]]$best.preds.fix){
+    print(tr)
+    glob.form <- paste0(tr, " ~ 1",
+                        " + GID",
+                        " + YEAR",
+                        " + (1|LOC) ",
+                        " + (1|YEAR:LOC)"
+                        
+    )
+    
+    out[[tr]] <- try(plantTrialLmmFitCompSel(glob.form=glob.form,
+                                             dat=dat.noNA[[tr]],
+                                             part.comp.sel=c("fixed"),
+                                             nb.cores=1, verbose=0))
+  }
+}
+```
+
+## Extract non-genetic trend 
+
+From year effect
+```{r year_effect}
+yearEff <- list()
+for(tr in traits){
+  yearEff[[tr]] <- fixef(out[[tr]]$bestmod.reml)[grep("YEAR",names(fixef(out[[tr]]$bestmod.reml)))]
+  names(yearEff[[tr]]) <- gsub("YEAR","",names(yearEff[[tr]]))
+}
+saveRDS(yearEff, file=here("output","lme4",paste0(par,"_year_effects_fixed_lme4.rds")))
+```
+
+
+## Analyze variance components
+
+```{r}
+for(tr in traits[!traits %in% pbm]){
+  cat(paste(tr,"\t"))
+  try(print(anova(out[[tr]]$bestmod.reml)))
+  try(print(ranova(out[[tr]]$bestmod.ml)))
+  #anov <- rand(out[[tr]]$bestmod.reml)
+}
+```
+
+
+# Assumption checking
+
+## Residual preparation and blues prediction
+
+```{r}
+geno.blues <- list() ; geno.var.blues <- list()
+fit.all <- list()
+for(tr in traits[!traits %in% pbm]){
+  fit.all[[tr]] <- cbind(out[[tr]]$dat,
+                         response=out[[tr]]$dat[[tr]],
+                         cond.res=NA,
+                         scl.cond.res=NA,
+                         fitted=NA)
+  fit.all[[tr]]$cond.res <- residuals(out[[tr]]$bestmod.reml)
+  fit.all[[tr]]$scl.cond.res<- residuals(out[[tr]]$bestmod.reml) /
+    sigma(out[[tr]]$bestmod.reml)
+  fit.all[[tr]]$fitted <- fitted(out[[tr]]$bestmod.reml)
+  fixEf <- fixef(out[[tr]]$bestmod.reml)[-1]
+  geno.blues[[tr]] <- fixEf[grep(names(fixEf), pattern="GID")]
+  geno.blues[[tr]] <- fixef(out[[tr]]$bestmod.reml)["(Intercept)"] + geno.blues[[tr]]
+  names(geno.blues[[tr]]) <- gsub("GID","",names(geno.blues[[tr]]))
+}
+```
+
+
+## Error homoscedasticity
+
+Overall
+```{r check_error_homoscedasticity}
+for(tr in traits[!traits %in% pbm]){
+  x.lim <- max(abs(fit.all[[tr]]$scl.cond.res), na.rm=TRUE)
+  plot(x=fit.all[[tr]]$scl.cond.res, y=fit.all[[tr]]$fitted, las=1,
+       xlim=c(-x.lim, x.lim),
+       xlab="scaled conditional residuals",
+       ylab="fitted responses",
+       main=tr)
+  abline(v=c(0, -1.96, 1.96), lty=c(2, 3, 3))
+}
+```
+
+Color per YEAR
+
+```{r}
+for(tr in traits[!traits %in% pbm]){
+  fit.all[[tr]]$YEAR <- as.factor(fit.all[[tr]]$YEAR)
+  x.lim <- max(abs(fit.all[[tr]]$scl.cond.res), na.rm=TRUE)
+  g <- ggplot(fit.all[[tr]], aes(x=scl.cond.res, y=fitted,color=YEAR)) +
+    geom_point() + theme_bw() + 
+    xlim(c(-x.lim, x.lim)) +
+    xlab("scaled conditional residuals") +
+    ylab("fitted responses") +
+    ggtitle(tr) +
+    paletteer::scale_colour_paletteer_d("Polychrome::palette36") +
+    geom_vline(xintercept = c(0, -1.96, 1.96),
+               linetype="dashed")
+  plot(g)
+  
+}
+```
+
+
+## Error normality
+
+```{r check_error_normality}
+for(tr in traits[!traits %in% pbm]){
+  shapiro.test(sample(fit.all[[tr]]$scl.cond.res,5000, replace=T))
+  qqnorm(y=fit.all[[tr]]$scl.cond.res,
+         main=paste0(tr, ": scaled conditional residuals"))
+  qqline(y=fit.all[[tr]]$scl.cond.res, col="red")
+}
+```
+
+
+## Outlying genotypes
+
+Print genotypic values and extreme values:
+```{r check_outlying_genos_plot}
+for(tr in traits[!traits %in% pbm]){
+  
+  #x.lim <- max(abs(geno.blues[[tr]]))
+  par(mar=c(5,6,4,1))
+  plot(x=geno.blues[[tr]], y=1:length(geno.blues[[tr]]),
+       #xlim=c(-x.lim, x.lim),
+       xlab="genotypic blues",
+       main=paste0(tr),
+       pch=19,
+       yaxt="n", ylab="")
+  axis(side=2, at=1:length(geno.blues[[tr]]), labels=names(geno.blues[[tr]]), las=1)
+  #abline(v=0, lty=2)
+  idx <- which.max(geno.blues[[tr]])
+  text(x=geno.blues[[tr]][idx], y=idx, labels=names(idx), pos=2)
+  idx <- which.min(geno.blues[[tr]])
+  text(x=geno.blues[[tr]][idx], y=idx, labels=names(idx), pos=4)
+}
+```
+
+## Normality of genotypic blues
+
+```{r check_normality_geno_blues_qqplot}
+for(tr in traits[!traits %in% pbm]){
+  shapiro.test(geno.blues[[tr]])
+  qqnorm(y=geno.blues[[tr]], asp=1,
+         main=paste0(tr, ": genotypic blues"))
+  qqline(y=geno.blues[[tr]], col="red")
+}
+
+```
+
+## Independence between errors and genotypes
+
+Color with location
+```{r check_indep_error_geno_plot}
+for(tr in traits[!traits %in% pbm]){
+  x.lim <- max(abs(fit.all[[tr]]$scl.cond.res))
+  plot(lattice::dotplot(GID ~ scl.cond.res, data=fit.all[[tr]],
+                        xlim=c(-x.lim, x.lim),
+                        groups=LOC,
+                        pch=19,
+                        xlab="scaled conditional residuals",
+                        main=tr,
+                        scales = list(y = list(draw=FALSE)),
+                        panel=function(x,y,...){
+                          panel.abline(v=c(0, -1.96, 1.96), lty=c(2,3,3))
+                          panel.dotplot(x,y,...)
+                        }))
+}
+```
+
+
+
+```{r check_indep_error_geno_plot_YEAR_block}
+for(tr in traits[!traits %in% pbm]){
+  print(
+    lattice::dotplot(GID ~ scl.cond.res | YEAR,
+                     data=fit.all[[tr]],
+                     groups=LOC,
+                     pch=19,
+                     auto.key=list(space="right"),
+                     xlab="scaled conditional residuals",
+                     main=tr,
+                     scales = list(y = list(draw=FALSE)),
+                     panel=function(x,y,...){
+                       panel.abline(v=c(0, -1.96, 1.96), lty=c(2,3,3))
+                       panel.dotplot(x,y,...)
+                     }))
+}
+```
+
+
+
+# Model outputs
+
+## Summary
+
+```{r bestmod_infer}
+vc.reml  <- list()
+for(tr in traits[!traits %in% pbm]){
+  ## summary(bestmod.ml)
+  (vc.ml <- as.data.frame(VarCorr(out[[tr]]$bestmod.ml)))
+  #summary(bestmod.reml)
+  vc.reml[[tr]] <- as.data.frame(VarCorr(out[[tr]]$bestmod.reml))
+  print(vc.reml[[tr]])
+}
+```
+
+
+## Broad-sense heritability 
+
+```{r H2}
+# H2_list <- list() ; mySumm <- list()
+# for(tr in traits){
+#   cat(tr)
+#   H2_list[[tr]] <- estimH2means(dat=droplevels(dat.noNA[[tr]]), colname.resp=tr,
+#                                 colname.trial="YEAR", vc=vc.reml[[tr]],
+#                                 geno.var.blues=geno.var.blues[[tr]])
+#   
+#   print(H2_list[[tr]]$mean.nb.trials)
+#   print(H2_list[[tr]]$mean.nb.reps.per.trial)
+#   print(H2_list[[tr]]$H2.classic)
+#   mySumm[[tr]] <- H2_list[[tr]]$sryStat
+# }
+```
+
+## Reliability
+
+```{r}
+rel <- c()
+for(tr in traits){
+  r <- psych::harmonic.mean(as.vector(table(dat.noNA[[tr]]$GID)), zero=FALSE)
+  #vg <- vc.reml[[tr]]$vcov[vc.reml[[tr]]$grp == "GID"]
+  vg <- var(geno.blues[[tr]])
+  ve <- vc.reml[[tr]]$vcov[vc.reml[[tr]]$grp == "Residual"]
+  rel[tr] <- round(vg/(vg+ve/r),3)
+}
+rel
+```
+
+
+
+<!-- ## Confidence intervals -->
+
+<!-- ### Profiling -->
+
+<!-- ```{r bestmod_confint_prof} -->
+
+<!-- for(tr in traits){ -->
+<!--   p2f <- here("output","lme4",paste0("URSN_lme4_save_fit_confint-prof_",tr,par, ".RData")) -->
+
+<!--   if(! file.exists(p2f)){ -->
+<!--     st <- system.time( -->
+<!--       prof <- profile(out[[tr]]$bestmod.ml, signames=FALSE, -->
+<!--                       parallel="multicore", ncpus=1)) -->
+<!--     # print(st) -->
+<!--     save(prof, file=p2f) -->
+<!--     # print(tools::md5sum(path.expand(p2f))) -->
+<!--   } else{ -->
+<!--     print(tools::md5sum(path.expand(p2f))) -->
+<!--     load(p2f) -->
+<!--   } -->
+<!--   (ci <- confint(prof, level=0.95)) -->
+<!--   ## dont't plot, too many factor levels -->
+
+<!--   # idx.varcomps <- grep("\\||sigma", rownames(ci)) -->
+<!--   # idx.fix <- setdiff(1:nrow(ci), idx.varcomps) -->
+<!--   # plot(xyplot(prof, absVal=TRUE, conf=c(0.8, 0.95), which=idx.varcomps,main=paste0(tr))) -->
+<!--   # print(xyplot(prof, absVal=TRUE, conf=c(0.8, 0.95), which=idx.fix,main=paste0(tr))) -->
+<!--   # print(densityplot(prof,main=paste0(tr))) -->
+<!--   # print(splom(prof, conf=c(0.8, 0.95), which=idx.varcomps,main=paste0(tr))) -->
+<!--   # if(length(idx.fix) > 1) -->
+<!--   #   print(splom(prof, conf=c(0.8, 0.95), which=idx.fix,main=paste0(tr))) -->
+<!-- } -->
+<!-- ``` -->
+
+<!-- ### Bootstrapping -->
+
+
+<!-- ```{r bestmod_confint_boot} -->
+<!-- boot_list <- list() -->
+
+<!-- for(tr in traits){ -->
+<!--   print(tr) -->
+<!--   p2f <- here("output","lme4",paste0("URSN_lme4_save_fit_confint-boot_URSN_",tr,par, ".RData")) -->
+
+<!--   if(! file.exists(p2f)){ -->
+<!--     st <- system.time( -->
+<!--       fit.boot <- bootMer(x=out[[tr]]$bestmod.ml,  -->
+<!--                           FUN=H2_list[[tr]]$sryStat, -->
+<!--                           nsim=1*10^3,  -->
+<!--                           seed=1859, -->
+<!--                           use.u=FALSE, type="parametric", -->
+<!--                           parallel="multicore", ncpus=1)) -->
+<!--     print(st) -->
+<!--     save(fit.boot, file=p2f) -->
+<!--     print(tools::md5sum(path.expand(p2f))) -->
+<!--   } else{ -->
+<!--     print(tools::md5sum(path.expand(p2f))) -->
+<!--     load(p2f) -->
+<!--   } -->
+<!--   boot_list[[tr]] <- fit.boot -->
+
+<!-- } -->
+<!-- ``` -->
+
+
+# Save outputs
+
+## Fit information
+
+```{r info_to_save}
+
+info2save <- data.frame(trait=traits,
+                        transformation=c(transf[traits]),
+                        missing.data.percent=round(miss.dat.perc[traits],0),
+                        ngeno=c(ngeno[traits]),
+                        nobs=sapply(dat.noNA,nrow),
+                        #transformation=ifelse(transf == "id", "NA", transf),
+                        fixed.effects=unlist(lapply(out, function(x)
+                          paste0(x$best.preds.fix,collapse=", "))),
+                        random.effects=unlist(lapply(out, function(x)
+                          paste0(x$best.preds.rnd,collapse=", "))),
+                        min=summ.traits[traits,"Min."],
+                        max=summ.traits[traits,"Max."],
+                        mean=summ.traits[traits,"Median"],
+                        sd=summ.traits[traits,"SD"],
+                        # var.geno=round(unlist(lapply(vc.reml, function(x)x[x$grp == "GID","vcov"])),3),
+                        # var.resid=round(unlist(lapply(vc.reml, function(x)x[x$grp == "Residual","vcov"])),3),
+                        # var.tot=round(unlist(lapply(vc.reml, function(x) sum(x$vcov))),3),
+                        reliability=rel)
+
+print_table(info2save)
+
+p2f <- here("output",paste0(par,"_lme4_fit-info_all_traits.tsv"))
+write.table(x=info2save,
+            file=p2f, quote=FALSE, sep="\t", row.names=FALSE)
+tools::md5sum(path.expand(p2f))
+file.mtime(p2f)
+```
+
+
+
+## Genotypic values
+
+
+Format genotypic values
+```{r}
+geno_blues <- list()
+for(tr in traits[!traits %in% pbm]){
+  # Add blues for GID and cross
+  geno_blues[[tr]] <-  data.frame(GID=names(geno.blues[[tr]]), 
+                                  geno.blues=geno.blues[[tr]],
+                                  trait=tr,
+                                  stringsAsFactors=FALSE)
+}
+## de transform data
+geno_blues$INC$geno.blues <- sqrt(geno_blues$INC$geno.blues)
+geno_blues$SEV$geno.blues <- (geno_blues$SEV$geno.blues)^2
+geno_blues$DIS$geno.blues <- (geno_blues$DIS$geno.blues)^2
+geno_blues$VSK$geno.blues <- (geno_blues$VSK$geno.blues)^2
+geno_blues$DON$geno.blues <- 10^(geno_blues$DON$geno.blues)
+
+```
+
+
+
+Plot genotypic values distribution
+```{r}
+for(tr in traits[!traits %in% pbm]){
+  ## plot distribution per cross
+  plot(ggplot(geno_blues[[tr]], aes(x=geno.blues)) +
+         geom_density() +
+         geom_rug() +
+         theme_bw() +
+         ggtitle(paste0("blues for ", tr," trait")))
+  
+}
+ap(geno_blues)
+"00EPWB-27" %in% geno_blues$DIS$GID
+```
+
+Save genotypic values
+```{r save_geno_values, echo=TRUE,warning=FALSE, message=FALSE}
+
+
+# # save list of blues and associated variance
+# p2f <- here("output",paste0("URSN_geno_blues_var_lme4-values",par,".Rdata"))
+# save(geno_blues, file=p2f)
+# tools::md5sum(path.expand(p2f))
+# file.mtime(p2f) 
+
+## save data frame of blues for all traits
+geno_blues_long <- do.call(rbind, geno_blues)
+head(geno_blues_long)
+geno_blues_long$geno.var.blues <- NULL
+df_blues <- pivot_wider(geno_blues_long,names_from  = c("trait"),
+                        values_from = "geno.blues")
+df_blues <- df_blues %>% mutate_if(is.numeric, round, 4)
+dim(df_blues)
+ap(df_blues)
+
+
+# ## add first YEAR of trial
+# df_blues <- merge(df_blues, df_YEAR, by.x="id_geno", by.y="GID", all.x=TRUE)
+# df_blues <- relocate(df_blues, firstYEAR, .after = id_geno)
+# head(df_blues)
+# df_blues <- arrange(df_blues,firstYEAR)
+p2f <- here("output",paste0(par,"_geno_blues_lme4-values.tsv"))
+write.table(df_blues, file=p2f,col.names=TRUE, row.names=FALSE, sep="\t",
+            fileEncoding = "UTF-8")
+tools::md5sum(path.expand(p2f))
+file.mtime(p2f) 
+```
+
+What to do with BLUEs with negative values?
+
+
+
+# Plot correlations
+
+```{r plot_corr, fig.height=8, fig.width=8}
+# ggpairs(dplyr::select(Y,-GID),progress = FALSE) +
+#   theme_bw()
+ggcorr(df_blues,label=TRUE, 
+       label_size=5, geom="tile",max_size=11,
+       low="#FF3D7FFF", mid="#E0E4CCFF",high="#69D2E7FF", size=6,label_round=2)
+ggsave(here("output","figures",paste0(par,"_GenoCorr_",length(traits),"traits.png")))
+```
+
+
+# Appendix
+
+```{r info}
+t1 <- proc.time(); t1 - t0
+print(sessionInfo(), locale=FALSE)
+```
+
+
+
