@@ -39,7 +39,6 @@ suppressPackageStartupMessages(library(slider)) # sliding window
 here::i_am("analysis/URN_URSN_QTL_frequency.Rmd")
 ## load custom functions, for example, 'format_curate_vcf
 source(here("code","useful_functions.R")) 
-corresp.list <- readRDS(here("code","list_corresp_genotype_name.rds"))
 ## define a code for this population, to put in file names
 pop_code <- "URN_URSN"
 ```
