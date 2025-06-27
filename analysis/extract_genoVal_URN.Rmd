@@ -63,7 +63,10 @@ p2f <- here("data","all_inputs_URN_URSN_URNFHB.rds")
 file.mtime(p2f)
 all.inputs <- readRDS(p2f)
 ap(all.inputs)
+
 dat = all.inputs$URN
+purrr::map_dbl(dat, n_distinct)
+
 dim(dat) ## 29714 x 12
 head(dat)
 (traits <- sapply(dat, class) %>% {.[.=="numeric"]} %>% names())
@@ -90,15 +93,6 @@ for(tr in traits){
          bigstatsr::theme_bigstatsr(size.rel=0.8))
 
 }
-```
-Update genotype names
-```{r}
-purrr::map_dbl(dat, n_distinct)
-#dat$GID <- format_names(dat$GID)$corrected
-corresp.list <- readRDS(here("code","list_corresp_genotype_name.rds"))
-func <- concordance_match_name(match.name=dat$GID, corresp.list=corresp.list)
-func$df.changes
-dat$GID <- func$new.names
 ```
 
 
