@@ -383,72 +383,6 @@ rel
 ```
 
 
-
-<!-- ## Confidence intervals -->
-
-<!-- ### Profiling -->
-
-<!-- ```{r bestmod_confint_prof} -->
-
-<!-- for(tr in traits){ -->
-<!--   p2f <- here("output","lme4",paste0("URSN_lme4_save_fit_confint-prof_",tr,par, ".RData")) -->
-
-<!--   if(! file.exists(p2f)){ -->
-<!--     st <- system.time( -->
-<!--       prof <- profile(out[[tr]]$bestmod.ml, signames=FALSE, -->
-<!--                       parallel="multicore", ncpus=1)) -->
-<!--     # print(st) -->
-<!--     save(prof, file=p2f) -->
-<!--     # print(tools::md5sum(path.expand(p2f))) -->
-<!--   } else{ -->
-<!--     print(tools::md5sum(path.expand(p2f))) -->
-<!--     load(p2f) -->
-<!--   } -->
-<!--   (ci <- confint(prof, level=0.95)) -->
-<!--   ## dont't plot, too many factor levels -->
-
-<!--   # idx.varcomps <- grep("\\||sigma", rownames(ci)) -->
-<!--   # idx.fix <- setdiff(1:nrow(ci), idx.varcomps) -->
-<!--   # plot(xyplot(prof, absVal=TRUE, conf=c(0.8, 0.95), which=idx.varcomps,main=paste0(tr))) -->
-<!--   # print(xyplot(prof, absVal=TRUE, conf=c(0.8, 0.95), which=idx.fix,main=paste0(tr))) -->
-<!--   # print(densityplot(prof,main=paste0(tr))) -->
-<!--   # print(splom(prof, conf=c(0.8, 0.95), which=idx.varcomps,main=paste0(tr))) -->
-<!--   # if(length(idx.fix) > 1) -->
-<!--   #   print(splom(prof, conf=c(0.8, 0.95), which=idx.fix,main=paste0(tr))) -->
-<!-- } -->
-<!-- ``` -->
-
-<!-- ### Bootstrapping -->
-
-
-<!-- ```{r bestmod_confint_boot} -->
-<!-- boot_list <- list() -->
-
-<!-- for(tr in traits){ -->
-<!--   print(tr) -->
-<!--   p2f <- here("output","lme4",paste0("URSN_lme4_save_fit_confint-boot_URSN_",tr,par, ".RData")) -->
-
-<!--   if(! file.exists(p2f)){ -->
-<!--     st <- system.time( -->
-<!--       fit.boot <- bootMer(x=out[[tr]]$bestmod.ml,  -->
-<!--                           FUN=H2_list[[tr]]$sryStat, -->
-<!--                           nsim=1*10^3,  -->
-<!--                           seed=1859, -->
-<!--                           use.u=FALSE, type="parametric", -->
-<!--                           parallel="multicore", ncpus=1)) -->
-<!--     print(st) -->
-<!--     save(fit.boot, file=p2f) -->
-<!--     print(tools::md5sum(path.expand(p2f))) -->
-<!--   } else{ -->
-<!--     print(tools::md5sum(path.expand(p2f))) -->
-<!--     load(p2f) -->
-<!--   } -->
-<!--   boot_list[[tr]] <- fit.boot -->
-
-<!-- } -->
-<!-- ``` -->
-
-
 # Save outputs
 
 ## Fit information
@@ -469,9 +403,6 @@ info2save <- data.frame(trait=traits,
                         max=summ.traits[traits,"Max."],
                         mean=summ.traits[traits,"Median"],
                         sd=summ.traits[traits,"SD"],
-                        # var.geno=round(unlist(lapply(vc.reml, function(x)x[x$grp == "GID","vcov"])),3),
-                        # var.resid=round(unlist(lapply(vc.reml, function(x)x[x$grp == "Residual","vcov"])),3),
-                        # var.tot=round(unlist(lapply(vc.reml, function(x) sum(x$vcov))),3),
                         reliability=rel)
 
 info2save
