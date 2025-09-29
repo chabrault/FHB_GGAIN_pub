@@ -30,7 +30,7 @@ navbar:
   right:
   - icon: fab fa-github
     text: Source code
-    href: https://github.umn.edu/cbrault/FHB_GGAIN
+    href: https://github.com/chabrault/FHB_GGAIN_pub
 output:
   workflowr::wflow_html:
     toc: yes
