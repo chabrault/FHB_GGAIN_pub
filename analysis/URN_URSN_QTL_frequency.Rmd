@@ -64,7 +64,7 @@ table(geno.info$SOURCE)
 # Combine all KASP markers same QTL
 
 ```{r combine_kasps}
-qtl.desc <- mas.tabL.FHB |> select(QTL.name, KASP.name) |> distinct()
+qtl.desc <- mas.tabL.FHB |> dplyr::select(QTL.name, KASP.name) |> distinct()
 print_table(qtl.desc)
 #df.qtls <- mas.tabL.FHB
 
@@ -98,6 +98,9 @@ for(q in unique(mas.tabL.FHB$QTL.name)){
 
 dim(df.qtls)
 head(df.qtls)
+purrr::map_dbl(df.qtls, n_distinct)
+df.qtls <- df.qtls |> filter(FIRST_YEAR > 1965)
+
 ```
 
 Add genotype information
@@ -105,6 +108,12 @@ Add genotype information
 df.qtls <- merge(df.qtls,geno.info, all=F)
 head(df.qtls)
 dim(df.qtls)
+purrr::map_dbl(df.qtls, n_distinct)
+length(unique(df.qtls$GID[df.qtls$FIRST_YEAR >= 1995]))
+df.qtls.95 <- df.qtls |> filter(FIRST_YEAR >= 1995)
+df.qtls.95 |> dplyr::select(GID,SOURCE,NURSERY) |> distinct() |> 
+  group_by(NURSERY) |> summarize(n=n(),.groups="drop") 
+table(df.qtls.95$NURSERY)
 #df.qtls$QTL.name[df.qtls$QTL.name == "Fhb5AS(PI277012)"] <- "Fhb5AS"
 ```
 
@@ -165,6 +174,13 @@ ggsave(here("output","figures",paste0(pop_code,"_Fhb1-5-freq_first-year_5-yr-win
 
 ```
 
+Exlore Fhb5-IWA6412 bump:
+```{r}
+mas.tabL.FHB |> filter(FIRST_YEAR > 1973 & FIRST_YEAR < 1981) |> 
+  filter(KASP.name %in% "IWA6412",QTL.allele %in% "Fhb5")
+```
+Only James is on wheatpedigree.net. James doesn't have SUMAI 3 in its pedigree.
+
 
 
 ## For Fhb1
@@ -212,7 +228,6 @@ table(tmp$allele)
 ```
 
 
-
 ### By source
 
 ```{r fhb1_freq_by_source}
@@ -245,7 +260,8 @@ ggplot(dat2plot,aes(x=FIRST_YEAR, y=freq.slid, color=SOURCE))+
   scale_x_continuous(breaks=seq(1995,2025,5),minor_breaks = seq(1995,2025,1))+
   scale_size(range = c(1.5,6),guide = "none") +
   theme_bigstatsr(size.rel=0.8)+
-  gghighlight::gghighlight(line_label_type="ggrepel_label", label_params =list(nudge_x=1.5, alpha=0.7, min.segment.length=0)) +
+  gghighlight::gghighlight(line_label_type="ggrepel_label", 
+                           label_params =list(nudge_x=1.5, alpha=0.7, min.segment.length=0)) +
   scale_y_continuous(labels = scales::percent)+
   ylab("Frequency of Fhb1 allele")+ xlab("First year of testing")+
   # guides(color=guide_legend(title="Source", 
@@ -255,6 +271,7 @@ ggplot(dat2plot,aes(x=FIRST_YEAR, y=freq.slid, color=SOURCE))+
 ggsave(here("output","figures",paste0(pop_code,"_Fhb1_freq_by-source_first-year_5-yr-window_v2.png")),
        height=5,width=7,scale=0.9)
 ```
+
 
 
 ### By nursery
@@ -283,7 +300,8 @@ dat2plot |> arrange(desc(FIRST_YEAR)) |> mutate(FIRST_YEAR=as.factor(FIRST_YEAR)
 
 ggplot(dat2plot,aes(x=FIRST_YEAR, y=freq.slid, color=NURSERY, group=NURSERY, shape=NURSERY))+
   #facet_wrap(~QTL.name, nrow=3)+lemon::coord_capped_cart(bottom="both")+
-  lemon::facet_rep_wrap(.~QTL.name, nrow=3,repeat.tick.labels = F)+
+  #lemon::facet_rep_wrap(.~QTL.name, nrow=3,repeat.tick.labels = F)+
+  ggh4x::facet_wrap2(.~QTL.name, nrow=3,axes = "all", remove_labels = "all")+
   geom_point(size=2.5,show.legend=T)+
   geom_line(lwd=1.5,alpha=0.5, show.legend=F)+
   theme_bigstatsr(size.rel=0.7)+
@@ -308,6 +326,7 @@ ggplot(dat2plot,aes(x=FIRST_YEAR, y=freq.slid, color=NURSERY, group=NURSERY, sha
 ggsave(here("output","figures",paste0(pop_code,"_Fhb1_freq_by-nursery_first-year_5-yr-window_v2.png")),
        height=7,width=7,scale=0.9)
 ```
+
 
 
 Statistics mixing URN and URSN populations together
@@ -380,7 +399,10 @@ gtsummary::tbl_summary(df.qtls, by=QTL.name, include="allele")
 
 # Study coincidence of QTLs
 
-```{r qtl_coincidence}
+## Fhb1
+
+
+```{r qtl_coincidence_fhb1}
 mas.tabL.FHB |> select(QTL.name, KASP.name) |> distinct() |> print_table()
 ## Fhb1
 tmp.qtl <- mas.tabL.FHB |> filter(QTL.name == "Fhb1") |> 
@@ -390,8 +412,11 @@ tmp.qtl <- mas.tabL.FHB |> filter(QTL.name == "Fhb1") |>
   mutate(`IFA-FM227`=factor(`IFA-FM227`, levels=c("Res","Sus","Het","Unk")))
 caret::confusionMatrix(tmp.qtl$`Fhb1-TaHRC-R-HEX-DEL-F`, tmp.qtl$`IFA-FM227`)
 gtsummary::tbl_cross(tmp.qtl, row="Fhb1-TaHRC-R-HEX-DEL-F",col="IFA-FM227", percent="cell")
+```
 
+## Fhb5
 
+```{r qtl_coincidence_fhb5}
 ## Fhb5
 tmp.qtl <- mas.tabL.FHB |> filter(QTL.name == "Fhb5") |> 
   select(-QTL.name,-QTL.allele) |> distinct() |> 
@@ -401,6 +426,12 @@ tmp.qtl <- mas.tabL.FHB |> filter(QTL.name == "Fhb5") |>
 caret::confusionMatrix(tmp.qtl$`GENE-3371_56`, tmp.qtl$IWA6412)
 gtsummary::tbl_cross(tmp.qtl, row="GENE-3371_56",col="IWA6412", percent="cell")
 
+```
+
+## Fhb5 and Fhb5AS
+
+
+```{r qtl_coincidence_Fhb5_2}
 ## coincidence of all Fhb5
 tmp.qtl <- mas.tabL.FHB |> filter(KASP.name %in% c("IWA6412","IWA5528")) |> 
   select(-QTL.name,-QTL.allele) |> distinct() |> 

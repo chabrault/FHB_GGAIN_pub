@@ -32,6 +32,7 @@ suppressPackageStartupMessages(library(easystats)) # anova eta squared
 suppressPackageStartupMessages(library(multcomp)) # anova multiple comparison  
 suppressPackageStartupMessages(library(emmeans)) # marginal means  
 suppressPackageStartupMessages(library(patchwork)) # combine plots  
+suppressPackageStartupMessages(library(ggpmisc)) # add eq to plot
 
 ```
 
@@ -119,6 +120,10 @@ traits <- colnames(dat)[-1]
 # Format data
 
 ```{r}
+length(intersect(df.qtls$GID, dat$GID))
+length(intersect(df.qtls$GID[df.qtls$NURSERY %in% c("URN","BOTH")], dat$GID))
+length(intersect(df.qtls$GID[df.qtls$NURSERY %in% c("URSN","BOTH")], dat$GID))
+setdiff(unique(df.qtls$GID), dat$GID)
 ## add genotypic values to QTL information
 gv.qtl <- merge(df.qtls, dat, by="GID",  all.x=T, all.y=F)
 
@@ -158,6 +163,8 @@ BPs <- c("AAFC-CA","MN","ND","SD","MT")
 
 pal <- c("AAFC-CA"="#F5586A",MN="#ffcc33",ND="#2E8B57",SD="#3A5FCD", MT="#bd9b04")
 
+p.all.src.dat <- list()
+
 for(tr in FHB.traits){
   dat.fit <- gv.qtl |>
     dplyr::select(all_of(c("GID","FIRST_YEAR","SOURCE", "QTL.name", "allele", tr))) |>
@@ -167,79 +174,89 @@ for(tr in FHB.traits){
     mutate(allele=as.factor(allele),SOURCE=as.factor(SOURCE))
   
   cat(tr)
-  fit <- lm(paste0(tr, "~ FIRST_YEAR + allele+ SOURCE"), data=dat.fit)
-  print(summary(fit))
+  fit <- lm(paste0(tr, "~ FIRST_YEAR + allele+ SOURCE + allele:SOURCE"), data=dat.fit)
+  print(anova(fit))
+  all.src.eff <- as.data.frame(emmeans::emmeans(fit, specs = c("allele","SOURCE") ))
+  all.src.eff$trait <- tr
+  p.all.src.dat[[tr]] <- all.src.eff
+  
   tabyl(dat.fit, SOURCE, allele)
-  
-  ## two-way ANOVA
-  
-  fct <- Plot2WayANOVA(formula =as.formula(paste0(tr,"~ allele*SOURCE")),
-                       dataframe=dat.fit, errorbar.display = "CI",
-                       mean.color = "white",mean.label = TRUE,
-                       ggplot.component =
-                         list(scale_color_manual(values=pal),
-                              scale_fill_manual(values=pal)))
-  ## remove the effect of first year beforehand?
-  pos <- position_dodge(width = 0.05)
-  
-  plot(ggplot(fct$MeansTable, aes(x=SOURCE, y=TheMean, color=allele,
-                                  ymin=LowerBoundCI,ymax=UpperBoundCI, group=allele))+
-         geom_point(size=3,position=pos) +
-         geom_errorbar(width=0.1, position=pos)+
-         ggtitle(paste0("Estimate of Fhb1 allelic effect on ",tr))+
-         ylab("Fhb1 effect") + xlab("Breeding program")+
-         geom_line(position=pos, linewidth=0.8, linetype="dotted") +
-         theme_bigstatsr(size.rel=0.8)+ 
-         scale_color_manual(values=c("Res"="#0D803B","Sus"="#AD151A","Unk"="grey60")))
-  print_table(fct$MeansTable)
 }
 
+dat2plot <- do.call(rbind, p.all.src.dat)
+dat2plot$SOURCE <- factor(dat2plot$SOURCE, levels=BPs)
+dat2plot$trait <- factor(dat2plot$trait, levels=FHB.traits)
+## difference between the 2 alleles for each breeding program
+dat2plot |>
+  group_by(trait,SOURCE) |>
+  summarize(diff=emmean[allele=="Res"] - emmean[allele=="Sus"],.groups="drop") |>
+  ungroup() 
+
+ggplot(dat2plot,aes(x=SOURCE,y=emmean, ymin=lower.CL, ymax=upper.CL,
+                    color=allele, group=allele))+
+  facet_wrap(~trait, scales="free_y")+
+  geom_point(size=3, position=position_dodge(width = 0.2))+
+  geom_errorbar(width=0.2, position=position_dodge(width = 0.2))+
+  geom_line(position=position_dodge(width = 0.2), linewidth=1,alpha=0.3)+
+  scale_color_manual(values=c("Res"="#077756","Sus"="hotpink","Unk"="grey60"),
+                     name="Allele",labels=c("Resistant","Susceptible"))+
+  # ggtitle(paste0("Estimate of Fhb1 allelic effect on ",tr," by breeding program"))+
+  ylab(paste0("Fhb1 effect")) + xlab("Breeding program")+
+  theme_bigstatsr(size.rel=0.8)+ 
+  theme(legend.position="inside",
+        legend.position.inside=c(0.1,0.7),
+        legend.direction="vertical",
+        legend.title.position = "top",
+        strip.background = element_blank(),
+        strip.text = element_text(size=13),
+        axis.text.x=element_text(size=10),
+        legend.background=element_rect(color="grey70"))
+ggsave(here("output","figures",paste0(pop_code,"_Fhb1_effect_by_source.png")),
+       height=7,width=13,scale=0.7)
 ```
 
 ## Fhb1 effect on 6 traits
 
-```{r study_fhb1_effect_6traits}
+```{r study_fhb1_effect_6traits_v2}
 traits.fhb <- c("DIS","VSK","DON")
+
 plist <- list()
 traits.sel <- c(traits.fhb, "YLD","PROT","TWT")
 plt.arr <- list(nudgey=c(DIS=2,VSK=3,DON=2,YLD=-300,PROT=-0.8,TWT=-2),
-                yeta=c(DIS=53,VSK=83,DON=55,YLD=4450,PROT=15.7,TWT=82))
-# ysignif=c(DIS=65,VSK=91,DON=47,YLD=4700,PROT=16.1,TWT=84),
-# ymax=c(DIS=74,VSK=103,DON=55,YLD=5200,PROT=15.7,TWT=86.5))
+                yeta=c(DIS=44,VSK=79,DON=25.5,YLD=4500,PROT=15.7,TWT=82),
+                ysignif=c(DIS=45,VSK=80,DON=25,YLD=4700,PROT=16.1,TWT=83),
+                ymax=c(DIS=55,VSK=92,DON=32,YLD=5100,PROT=17,TWT=85.5))
 marginal.means <- list()
 for(tr in traits.sel){
   dat2plot <- gv.qtl |>
-    dplyr::select(all_of(c("GID","QTL.name","FIRST_YEAR","SOURCE", "allele", tr))) |> 
+    dplyr::select(all_of(c("GID","QTL.name","FIRST_YEAR",
+                           "SOURCE", "allele", tr))) |> 
     filter(!is.na(.data[[tr]]),
            QTL.name == "Fhb1",
            FIRST_YEAR >= 1995,
            allele %in% c("Res","Sus")) |>
     mutate(allele=factor(allele, levels=c("Res","Sus"),
                          labels=c("Resistant","Susceptible")))
-  #dat2plot$FIRST_YEAR[dat2plot$FIRST_YEAR < 1968] <- 1968
-  cat(tr)
   ## Estimate the effect of Fhb1 on the trait while controlling for the first year
-  fit <- lm(paste0(tr, "~ FIRST_YEAR + allele"), data=dat2plot)
-  print(summary(fit))
-  # wilcox.test(x=dat2plot[dat2plot$allele == "Resistant",tr],
-  #             y=dat2plot[dat2plot$allele == "Susceptible",tr])
+  fit <- lm(paste0(tr, "~  FIRST_YEAR + allele"), data=dat2plot)
+
+  print(anova(fit))
   pval <- anova(fit)[["Pr(>F)"]][2]
   emm <- as.data.frame(emmeans::emmeans(fit, specs = "allele") )
   marginal.means[[tr]] <- emm
   eta2 <- effectsize::eta_squared(fit)
-  
-  ## add mean value in the two categories
-  #summ.text <- dat2plot |> group_by(allele) |> summarize(mean=mean(.data[[tr]]))
   
   ## add number of obs
   xlabs <- paste(levels(dat2plot$allele),"\n(N=",table(dat2plot$allele),")",sep="")
   
   plist[[tr]] <- ggplot(dat2plot, aes(x=allele, y=.data[[tr]]))+
     geom_quasirandom(alpha=0.3, width=0.25, size=0.8, aes(color=FIRST_YEAR))+
-    geom_boxplot(fill=NA,lwd=1, show.legend=F, outliers = FALSE, width=0.25, color="maroon")+
+    geom_boxplot(fill=NA,lwd=1, show.legend=F, outliers = FALSE, 
+                 width=0.25, color="maroon")+
     xlab(paste0("Fhb1 allele"))+
     ## expand the y axis with mult
-    scale_y_continuous(expand = expansion(mult = c(0, .2)))+
+    #scale_y_continuous(expand = expansion(mult = c(0, .2)))+
+    ylim(c(NA,plt.arr$ymax[tr]))+
     scale_x_discrete(labels=xlabs)+
     guides(color=guide_colorbar(barwidth=12 ))+
     geom_point(data=emm, aes(x=allele, y=emmean), 
@@ -250,9 +267,8 @@ for(tr in traits.sel){
                      color="black", size=4, nudge_x=0.38, 
                      nudge_y=plt.arr$nudgey[tr], min.segment.length=0)+
     ggsignif::stat_signif(comparisons = list(c("Resistant","Susceptible")), 
-                          #test="wilcox.test",
                           annotations=sprintf("p = %.2g", pval),
-                          vjust=-0.5)+
+                          vjust=-0.5,y_position = plt.arr$ysignif[tr])+
     annotate("text",label=paste0("\u03b7\u00b2 = ",round(eta2$Eta2_partial[2],4)),
              x=1.5, y=plt.arr$yeta[tr],size=4, color="black")+
     scale_color_viridis_c( name="First year")+
@@ -260,31 +276,128 @@ for(tr in traits.sel){
     theme(legend.position="bottom", legend.direction="horizontal",
           legend.title.position = "top",
           axis.text.x=element_text(size=10), axis.title.x=element_blank())
-  plot(plist[[tr]])
+  #plot(plist[[tr]])
   rm(fit, dat2plot)
 }
 ggarrange(plotlist=plist, ncol=2, nrow=3,common.legend = TRUE, legend="bottom",labels = "AUTO")
-ggsave(here("output","figures",paste0(pop_code,"_Fhb1_effects_6traits_distrib_v3.png")),
+ggsave(here("output","figures",paste0(pop_code,"_Fhb1_effects_6traits_distrib_v4.png")),
        height=8,width=11,scale=0.85)
 ```
 
+
+
+
 Study marginal means for Fhb1 effect on traits
-```{r}
+```{r marginal_means_Fhb1}
 marginal.means |> bind_rows(.id="trait") |> group_by(trait) |> 
   summarize(perc.diff= (emmean[allele=="Resistant"] - 
                           emmean[allele=="Susceptible"]) /
               emmean[allele=="Susceptible"] * 100)
 ```
 
+## Genetic gain with/without Fhb1
+
+Format data
+```{r}
+tmp <- split(gv.qtl, gv.qtl$NURSERY)
+tmp$URN <- rbind(tmp$URN, tmp$BOTH) ; tmp$URN$NURSERY <- "URN"
+tmp$URSN <- rbind(tmp$URSN, tmp$BOTH) ; tmp$URSN$NURSERY <- "URSN"
+dat2plot <- rbind(tmp$URN,tmp$URSN) |> 
+  filter(QTL.name %in% "Fhb1",
+         FIRST_YEAR >= 1995, 
+         NURSERY %in% c("URN","URSN"), 
+         !allele %in% c("Unk",NA)) |> 
+  dplyr::select(GID,FIRST_YEAR, NURSERY,allele,DIS,VSK,DON) |> 
+  tidyr::pivot_longer(cols=all_of(c("DIS","VSK","DON")), names_to="trait") |> 
+  group_by(allele,FIRST_YEAR,NURSERY,trait) |>
+  summarize(meanYr=mean(value),n=n(),
+            seYr=sd(value)/sqrt(n()),.groups="drop")
+dat2plot$allele <- case_match(dat2plot$allele, "Res"~"Fhb1+", "Sus"~"Fhb1-")
+```
+
+
+Calculate genetic gain
+
+```{r}
+## URN
+dat.wide.urn <-tidyr::pivot_wider(dat2plot[dat2plot$NURSERY %in% "URN",],
+                                  id_cols=c("allele","FIRST_YEAR","NURSERY"),
+                                  names_from = "trait", values_from="meanYr")
+# ggain.urn <- GGAIN(data=dat.wide.urn,
+#                    traits=traits.fhb, first_year = "FIRST_YEAR")
+ggain.urn <- purrr::map_dfr(split(dat.wide.urn, dat.wide.urn$allele),
+                            \(x) GGAIN(x, traits.fhb, "FIRST_YEAR"))
+ggain.urn$allele <- rep(names(split(dat.wide.urn, dat.wide.urn$allele)), each=length(traits.fhb))
+ggain.urn$NURSERY <- "URN"
+print_table(ggain.urn)
+
+## URSN
+dat.wide.ursn <-tidyr::pivot_wider(dat2plot[dat2plot$NURSERY %in% "URSN",],
+                                   id_cols=c("allele","FIRST_YEAR","NURSERY"),
+                                   names_from = "trait", values_from="meanYr")
+# ggain.ursn <- GGAIN(data=dat.wide.ursn,
+#                    traits=traits.fhb, first_year = "FIRST_YEAR")
+
+ggain.ursn <- purrr::map_dfr(split(dat.wide.ursn, dat.wide.ursn$allele),
+                             \(x) GGAIN(x, traits.fhb, "FIRST_YEAR"))
+ggain.ursn$allele <- rep(names(split(dat.wide.ursn, dat.wide.ursn$allele)), each=length(traits.fhb))
+ggain.ursn$NURSERY <- "URSN"
+print_table(ggain.ursn)
+
+ggain <- rbind(ggain.urn, ggain.ursn)
+
+tmp <- expand.grid(trait=c("DIS","VSK","DON"),
+                   allele=c("Fhb1+","Fhb1-"))
+tmp$y <- c(20,44,32,18,41,29)
+ggain<- ggain |> 
+  mutate(leg=paste0(allele," slope: ", slope, " [",slope.min,",",slope.max,"]")) |> 
+  left_join(tmp)
+
+```
+
+
+Plot
+```{r}
+dat2plot$trait <- factor(dat2plot$trait, levels=c("DIS","VSK","DON"))
+year.range.plt <- range(dat2plot$FIRST_YEAR)
+
+ggplot(dat2plot,aes(x=FIRST_YEAR, y=meanYr, color=allele))+
+  facet_grid(forcats::fct_relevel(trait)~NURSERY, scales="free_y")+
+  geom_point(aes(size=n)) +
+  scale_size_area(max_size=4)+
+  geom_text(data=ggain, mapping=aes(x=2015, y=y, label=leg, color=allele),
+            size=4, show.legend=F) +
+  geom_errorbar(aes(ymin=meanYr-seYr, ymax=meanYr+seYr))+
+  scale_x_continuous(breaks=seq(year.range.plt[1],year.range.plt[2],5),
+                     limits=year.range.plt,
+                     minor_breaks = seq(year.range.plt[1],year.range.plt[2],1))+
+  #geom_smooth(method="lm")+
+  stat_poly_line(show.legend=F) +
+  theme_bigstatsr(size.rel = 0.8)+
+  scale_color_manual(values=c("Fhb1+"="#077756","Fhb1-"="hotpink","Unk"="grey60"),
+                     name="Allele")+
+  guides(color="none", size=guide_legend(title="Size", 
+                                         theme(legend.text = element_text(size=9),
+                                               legend.title = element_text(size=12),
+                                               legend.background = element_rect(color="grey70"))))+
+  labs(x="First year", y="Trait value")+
+  theme(legend.position="inside",
+        legend.position.inside =c(0.85,0.2),
+        legend.direction = "horizontal")
+#stat_poly_eq(use_label("eq"),label.x = "right",vstep=0.12)
+ggsave(here("output","figures",paste0(pop_code,"_GGAIN-FHB_with-without-Fhb1.png")),
+       height=9,width=11,scale=0.85)
+```
+
 
 ## Fhb5 effect on 6 traits
 
-```{r study_fhb5_effect_6traits}
+```{r study_fhb5_effect_6traits, fig.height=7}
 traits.fhb <- c("DIS","VSK","DON")
 plist <- list()
 traits.sel <- c(traits.fhb, "YLD","PROT","TWT")
-plt.arr <- list(nudgey=c(DIS=2,VSK=3,DON=2,YLD=-300,PROT=-0.8,TWT=-2),
-                yeta=c(DIS=53,VSK=83,DON=55,YLD=4450,PROT=15.7,TWT=82))
+# plt.arr <- list(nudgey=c(DIS=2,VSK=3,DON=2,YLD=-300,PROT=-0.8,TWT=-2),
+#                 yeta=c(DIS=53,VSK=83,DON=55,YLD=4450,PROT=15.7,TWT=82))
 # ysignif=c(DIS=65,VSK=91,DON=47,YLD=4700,PROT=16.1,TWT=84),
 # ymax=c(DIS=74,VSK=103,DON=55,YLD=5200,PROT=15.7,TWT=86.5))
 marginal.means <- list()
@@ -301,7 +414,8 @@ for(tr in traits.sel){
   cat(tr)
   ## Estimate the effect of Fhb1 on the trait while controlling for the first year
   fit <- lm(paste0(tr, "~ FIRST_YEAR + allele"), data=dat2plot)
-  print(summary(fit))
+  #print(summary(fit))
+  print(anova(fit))
   pval <- anova(fit)[["Pr(>F)"]][2]
   emm <- as.data.frame(emmeans::emmeans(fit, specs = "allele") )
   marginal.means[[tr]] <- emm
@@ -313,28 +427,26 @@ for(tr in traits.sel){
   ## add number of obs
   xlabs <- paste(levels(dat2plot$allele),"\n(N=",table(dat2plot$allele),")",sep="")
   
-  plist[[tr]] <- ggplot(dat2plot, aes(x=allele, y=.data[[tr]], color=FIRST_YEAR))+
-    geom_quasirandom(alpha=0.3, width=0.25, size=0.8)+
-    
-    geom_boxplot(fill=NA,lwd=1, show.legend=F, outliers = FALSE, width=0.25, color="maroon")+
-    #stat_summary(fun=mean, geom="point",position=position_dodge(0.85),shape=4,size=4, stroke=1.2, color="black")+
-    xlab(paste0("Fhb5 allele"))+
+  plist[[tr]] <- ggplot(dat2plot, aes(x=allele, y=.data[[tr]]))+
+    geom_quasirandom(alpha=0.3, width=0.25, size=0.8, aes(color=FIRST_YEAR))+
+    geom_boxplot(fill=NA,lwd=1, show.legend=F, outliers = FALSE, 
+                 width=0.25, color="maroon")+
+    xlab(paste0("Fhb1 allele"))+
     ## expand the y axis with mult
-    scale_y_continuous(expand = expansion(mult = c(0, .2)))+
-    #scale_y_continuous(limits=c(min(dat2plot[[tr]], na.rm=T), plt.arr$ymax[tr]))+
+    #scale_y_continuous(expand = expansion(mult = c(0, .2)))+
+    ylim(c(NA,plt.arr$ymax[tr]))+
     scale_x_discrete(labels=xlabs)+
     guides(color=guide_colorbar(barwidth=12 ))+
     geom_point(data=emm, aes(x=allele, y=emmean), 
                size=3, shape=4, color="black",stroke=1.2,)+
+    geom_errorbar(data=emm, aes(x=allele, y=emmean, ymin=lower.CL, ymax=upper.CL), 
+                  width=0.01, color="black", size=0.8)+
     geom_label_repel(data=emm, aes(x=allele, y=emmean, label=round(emmean,2)), 
                      color="black", size=4, nudge_x=0.38, 
                      nudge_y=plt.arr$nudgey[tr], min.segment.length=0)+
-    #stat_compare_means(comparisons = list(c("Res","Sus")))+ # Add significance levels
     ggsignif::stat_signif(comparisons = list(c("Resistant","Susceptible")), 
-                          #test="wilcox.test",
                           annotations=sprintf("p = %.2g", pval),
-                          #y_position=plt.arr$ysignif[tr], 
-                          vjust=-0.5)+
+                          vjust=-0.5,y_position = plt.arr$ysignif[tr])+
     annotate("text",label=paste0("\u03b7\u00b2 = ",round(eta2$Eta2_partial[2],4)),
              x=1.5, y=plt.arr$yeta[tr],size=4, color="black")+
     scale_color_viridis_c( name="First year")+
@@ -342,7 +454,7 @@ for(tr in traits.sel){
     theme(legend.position="bottom", legend.direction="horizontal",
           legend.title.position = "top",
           axis.text.x=element_text(size=10), axis.title.x=element_blank())
-  plot(plist[[tr]])
+  #plot(plist[[tr]])
   rm(fit, dat2plot)
 }
 ggarrange(plotlist=plist, ncol=2, nrow=3,common.legend = TRUE, legend="bottom",labels = "AUTO")
@@ -365,8 +477,8 @@ marginal.means |> bind_rows(.id="trait") |> group_by(trait) |>
 traits.fhb <- c("DIS","VSK","DON")
 plist <- list()
 traits.sel <- c(traits.fhb, "YLD","PROT","TWT")
-plt.arr <- list(nudgey=c(DIS=2,VSK=3,DON=2,YLD=-300,PROT=-0.8,TWT=-2),
-                yeta=c(DIS=53,VSK=83,DON=55,YLD=4450,PROT=15.7,TWT=82))
+# plt.arr <- list(nudgey=c(DIS=2,VSK=3,DON=2,YLD=-300,PROT=-0.8,TWT=-2),
+#                 yeta=c(DIS=53,VSK=83,DON=55,YLD=4450,PROT=15.7,TWT=82))
 # ysignif=c(DIS=65,VSK=91,DON=47,YLD=4700,PROT=16.1,TWT=84),
 # ymax=c(DIS=74,VSK=103,DON=55,YLD=5200,PROT=15.7,TWT=86.5))
 marginal.means <- list()
@@ -384,7 +496,8 @@ for(tr in traits.sel){
   cat(tr)
   ## Estimate the effect of Fhb1 on the trait while controlling for the first year
   fit <- lm(paste0(tr, "~ FIRST_YEAR + allele"), data=dat2plot)
-  print(summary(fit))
+  #print(summary(fit))
+  print(anova(fit))
   pval <- anova(fit)[["Pr(>F)"]][2]
   emm <- as.data.frame(emmeans::emmeans(fit, specs = "allele") )
   marginal.means[[tr]] <- emm
@@ -396,28 +509,26 @@ for(tr in traits.sel){
   ## add number of obs
   xlabs <- paste(levels(dat2plot$allele),"\n(N=",table(dat2plot$allele),")",sep="")
   
-  plist[[tr]] <- ggplot(dat2plot, aes(x=allele, y=.data[[tr]], color=FIRST_YEAR))+
-    geom_quasirandom(alpha=0.3, width=0.25, size=0.8)+
-    
-    geom_boxplot(fill=NA,lwd=1, show.legend=F, outliers = FALSE, width=0.25, color="maroon")+
-    #stat_summary(fun=mean, geom="point",position=position_dodge(0.85),shape=4,size=4, stroke=1.2, color="black")+
-    xlab(paste0("Fhb5AS allele"))+
+  plist[[tr]] <- ggplot(dat2plot, aes(x=allele, y=.data[[tr]]))+
+    geom_quasirandom(alpha=0.3, width=0.25, size=0.8, aes(color=FIRST_YEAR))+
+    geom_boxplot(fill=NA,lwd=1, show.legend=F, outliers = FALSE, 
+                 width=0.25, color="maroon")+
+    xlab(paste0("Fhb1 allele"))+
     ## expand the y axis with mult
-    scale_y_continuous(expand = expansion(mult = c(0, .2)))+
-    #scale_y_continuous(limits=c(min(dat2plot[[tr]], na.rm=T), plt.arr$ymax[tr]))+
+    #scale_y_continuous(expand = expansion(mult = c(0, .2)))+
+    ylim(c(NA,plt.arr$ymax[tr]))+
     scale_x_discrete(labels=xlabs)+
     guides(color=guide_colorbar(barwidth=12 ))+
     geom_point(data=emm, aes(x=allele, y=emmean), 
                size=3, shape=4, color="black",stroke=1.2,)+
+    geom_errorbar(data=emm, aes(x=allele, y=emmean, ymin=lower.CL, ymax=upper.CL), 
+                  width=0.01, color="black", size=0.8)+
     geom_label_repel(data=emm, aes(x=allele, y=emmean, label=round(emmean,2)), 
                      color="black", size=4, nudge_x=0.38, 
                      nudge_y=plt.arr$nudgey[tr], min.segment.length=0)+
-    #stat_compare_means(comparisons = list(c("Res","Sus")))+ # Add significance levels
     ggsignif::stat_signif(comparisons = list(c("Resistant","Susceptible")), 
-                          #test="wilcox.test",
                           annotations=sprintf("p = %.2g", pval),
-                          #y_position=plt.arr$ysignif[tr], 
-                          vjust=-0.5)+
+                          vjust=-0.5,y_position = plt.arr$ysignif[tr])+
     annotate("text",label=paste0("\u03b7\u00b2 = ",round(eta2$Eta2_partial[2],4)),
              x=1.5, y=plt.arr$yeta[tr],size=4, color="black")+
     scale_color_viridis_c( name="First year")+
@@ -425,13 +536,19 @@ for(tr in traits.sel){
     theme(legend.position="bottom", legend.direction="horizontal",
           legend.title.position = "top",
           axis.text.x=element_text(size=10), axis.title.x=element_blank())
-  plot(plist[[tr]])
+  #plot(plist[[tr]])
   rm(fit, dat2plot)
 }
+
+```
+
+```{r}
 ggarrange(plotlist=plist, ncol=2, nrow=3,common.legend = TRUE, legend="bottom",labels = "AUTO")
-ggsave(here("output","figures",paste0(pop_code,"_Fhb5AS_effects_6traits_distrib.png")),
+ggsave(here("output","figures",paste0(pop_code,"_Fhb5AS_effects_6traits_distrib_v3.png")),
        height=8,width=11,scale=0.85)
 ```
+
+
 
 Study marginal means for Fhb5AS effect on traits
 ```{r}
@@ -472,31 +589,38 @@ for(tr in traits.sel){
 }
 ```
 
+Model ANOVA:
+
 ```{r}
 lapply(mod.sel, anova)
 ```
 
+Model summary:
+
 ```{r}
-lapply(mod.sel, summary)
-sapply(mod.sel, \(x) round(summary(x)$adj.r.squared,3))
+#sapply(mod.sel, \(x) round(summary(x)$adj.r.squared,3))
+sapply(mod.sel, \(x) insight::find_formula(x))
+lapply(mod.sel, \(x) broom::tidy(x)) |> bind_rows(.id="trait") |> 
+  gt::gt(groupname_col="trait") 
+sapply(mod.sel, \(x) broom::glance(x))
 
 ```
 
 
-## Interaction for DIS
+## Interaction for TWT
 
 Analyze interaction effects
 ```{r}
-tr <- "DIS"
+tr <- "TWT"
 ## fit two way anova
 mod.sel[[tr]]
 #mod.sel[[tr]]$coefficients
-tkt <- TukeyHSD(aov(mod.sel[[tr]]), which = c("Fhb1","Fhb5","Fhb5AS"))#,"Fhb1:Fhb5"))
+tkt <- TukeyHSD(aov(mod.sel[[tr]]), which = c("Fhb1","Fhb5","Fhb1:Fhb5"))#,"Fhb1:Fhb5"))
 tkt.df <- do.call(rbind, list(
   cbind(effect="Fhb1", diff.effect=rownames(tkt$Fhb1), tkt$Fhb1),
   cbind(effect="Fhb5", diff.effect=rownames(tkt$Fhb5),tkt$Fhb5),
-  cbind(effect="Fhb5AS", diff.effect=rownames(tkt$Fhb5AS),tkt$Fhb5AS)))
-  #cbind(effect="Fhb1:Fhb5", diff.effect=rownames(tkt$`Fhb1:Fhb5`),tkt$`Fhb1:Fhb5`)))
+  #cbind(effect="Fhb5AS", diff.effect=rownames(tkt$Fhb5AS),tkt$Fhb5AS)))
+  cbind(effect="Fhb1:Fhb5", diff.effect=rownames(tkt$`Fhb1:Fhb5`),tkt$`Fhb1:Fhb5`)))
 tkt.df <- as.data.frame(tkt.df)
 ## remove unknown rows
 tkt.df <- tkt.df[!grepl("Unk", tkt.df$diff.effect),]
@@ -504,7 +628,7 @@ tkt.df[,3:ncol(tkt.df)] <- apply(tkt.df[,3:ncol(tkt.df)],2, as.numeric)
 tkt.df$yaxis <- paste0(tkt.df$effect, " - ", tkt.df$diff.effect)
 
 
-tkt.df$effect <- factor(tkt.df$effect, levels=c("Fhb1","Fhb5","Fhb5AS"))#,"Fhb1:Fhb5"))
+tkt.df$effect <- factor(tkt.df$effect, levels=c("Fhb1","Fhb5","Fhb1:Fhb5"))#,"Fhb1:Fhb5"))
 tkt.df <- arrange(tkt.df, desc(effect))
 tkt.df$yaxis <- factor(tkt.df$yaxis, levels=unique(tkt.df$yaxis))
 
@@ -577,6 +701,7 @@ ggplot(tkt.df, aes(x=diff, y=yaxis, xmin=lwr, xmax=upr))+
 <!--        height=6,width=8,scale=0.8) -->
 <!-- ``` -->
 ```{r}
+tr <- "DIS"
 dat2fit <- gv.qtl |>
   dplyr::select(all_of(c("GID","QTL.name","FIRST_YEAR","SOURCE", "allele", tr))) |> 
   filter(!is.na(.data[[tr]]),
@@ -739,39 +864,48 @@ dat.upset <- df.qtls |> distinct() |>
   mutate(across(all_of(qtls.fhb), ~ ifelse(.x == "Res",1,0))) |> 
   left_join(dat, by="GID")
 head(dat.upset)
+
 ComplexUpset::upset(dat.upset, intersect=qtls.fhb,min_size=5,
                     name ="FHB QTL haplotypes",
+
                     annotations = list(
                       'DIS'=list(
                         aes=aes(x=intersection, y=DIS),
                         geom=list(
-                          geom_quasirandom(aes(color=FIRST_YEAR), na.rm=TRUE,show.legend=F, size=1, alpha=0.6),
-                          geom_boxplot(fill=NA, na.rm=TRUE, width=0.3, color="maroon",linewidth=1,outliers = F),
+                          geom_quasirandom(aes(color=FIRST_YEAR), na.rm=TRUE,show.legend=F, size=0.3, alpha=0.6),
+                          geom_boxplot(fill=NA, na.rm=TRUE, width=0.3, color="maroon",linewidth=0.8,outliers = F),
                           scale_color_viridis_c(name="First Year", limits=c(1995,2024))
                         )
                       ),
                       'VSK'=list(
                         aes=aes(x=intersection, y=VSK),
                         geom=list(
-                          geom_quasirandom(aes(color=FIRST_YEAR), na.rm=TRUE, size=1, alpha=0.6),
-                          geom_boxplot(fill=NA, na.rm=TRUE, width=0.3, color="maroon",linewidth=1,outliers = F),
+                          geom_quasirandom(aes(color=FIRST_YEAR), na.rm=TRUE, size=0.3, alpha=0.6),
+                          geom_boxplot(fill=NA, na.rm=TRUE, width=0.3, color="maroon",linewidth=0.8,outliers = F),
                           scale_color_viridis_c(name="First Year", limits=c(1995,2024))
                         )
                       ),
                       'DON'=list(
                         aes=aes(x=intersection, y=DON),
                         geom=list(
-                          geom_quasirandom(aes(color=FIRST_YEAR), na.rm=TRUE,show.legend=F, size=1, alpha=0.6),
-                          geom_boxplot(fill=NA, na.rm=TRUE, width=0.3, color="maroon",linewidth=1,outliers = F),
+                          geom_quasirandom(aes(color=FIRST_YEAR), na.rm=TRUE,show.legend=F, size=0.3, alpha=0.6),
+                          geom_boxplot(fill=NA, na.rm=TRUE, width=0.3, color="maroon",linewidth=0.8,outliers = F),
                           scale_color_viridis_c(name="First Year", limits=c(1995,2024))
                         )
                       )
-                      
                     )
-                    
 )
 ggsave(here("output","figures",paste0(pop_code,"_FHB_3QTLs_effect_3traits_upset_v3.png")),
        height=10,width=8,scale=0.9)
+```
+
+
+Check upset numbers
+```{r}
+dat.upset$QTLcode <- paste0(dat.upset$Fhb5AS,dat.upset$Fhb1,dat.upset$Fhb5)
+table(dat.upset$QTLcode)
+dat.upset$QTLcode <- gsub("NA","0",dat.upset$QTLcode)
+## => NA were transformed to 0 (susceptible)
 ```
 
 

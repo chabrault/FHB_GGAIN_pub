@@ -195,7 +195,7 @@ for(tr in traits){
   
   tmp <- dat |> 
     filter(NURSERY %in% c("URN","URSN"), !is.na(.data[[tr]])) |> 
-    select(-c(setdiff(traits.all, tr))) |> 
+    dplyr::select(-c(setdiff(traits.all, tr))) |> 
     tidyr::pivot_wider(names_from = all_of(c("NURSERY")), values_from = all_of(tr)) |> 
     arrange(FIRST_YEAR) |> mutate(FIRST_YEAR=as.factor(FIRST_YEAR))
   ## remove rows with less than 3 observations for each nursery
@@ -576,6 +576,13 @@ df.fit.noMT <- bind_rows(df.fit.noMT.urn |> mutate(nursery="URN",.after=trait) ,
   mutate(trait=factor(trait,levels=traits)) |>arrange(trait)
 print_table(df.fit.noMT, caption="Genetic gain estimation without MT genotypes")
 
+
+## average trait value MT vs. non-MT
+dat |> dplyr::select(-INC,-SEV,-HD)|>
+  tidyr::pivot_longer(cols=all_of(traits), names_to="trait", values_to="value") |> 
+  mutate(ISMT=ifelse(SOURCE %in% "MT", TRUE,FALSE)) |>
+  group_by(trait, ISMT) |> 
+  summarize(mean=mean(value, na.rm=T), se=sd(value, na.rm=T)/n(), .groups="drop") |> print_table()
 ```
 
 Calculate the percentage of increase when including MT on the genetic gain (slope)

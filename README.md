@@ -1,5 +1,5 @@
 
-This Read Me file was generated on 2025-06-20 by Charlotte Brault
+This Read Me file was generated on 2025-09-29 by Charlotte Brault
 
 
 # General information
@@ -98,7 +98,7 @@ Licenses/restrictions placed on the data: GNU-GPL3
 
 - `analysis/URN_URSN_QTL_frequency.Rmd`. In this script, we load phenotypic data and environmental covariates (ECs), we apply Finlay-Wilkinson regression to predict reaction norm intercept, slope, and phenotypic values based on mean phenotype and ECs. We compare the results with genomic prediction.
 
-- `analysis/explore_FHB_QTL_effect.Rmd`. In this script, we load the BLUEs from the phenoypic data for all the traits and the FHB QTLs for the URN and URSN populations, we explore the effect of the FHB QTLs on the FHB traits (DIS, VSK and DON) and on three agronomic traits (HT, PH and YLD).
+- `analysis/explore_FHB_QTL_effect_URN-URSN.Rmd`. In this script, we load the BLUEs from the phenoypic data for all the traits and the FHB QTLs for the URN and URSN populations, we explore the effect of the FHB QTLs on the FHB traits (DIS, VSK and DON) and on three agronomic traits (HT, PH and YLD).
 
 ### Other
 
@@ -116,4 +116,4 @@ Licenses/restrictions placed on the data: GNU-GPL3
 
 # Software and versions
 
-- R version v4.5.0 and RStudio v2024.12.1+563
+- R version v4.5.1 and RStudio v2025.09.0+387
