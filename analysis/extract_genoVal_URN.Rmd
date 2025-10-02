@@ -66,7 +66,7 @@ ap(all.inputs)
 dat = all.inputs$URN
 dim(dat) ## 29714 x 12
 head(dat)
-traits <- c("YLD","PROT","TWT")
+traits <- c("YLD","PROT","TWT","HD")
 #(traits <- sapply(dat, class) %>% {.[.=="numeric"]} %>% names())
 info.cols <- setdiff(colnames(dat),traits)
 dat <- dat %>% mutate_at(all_of(info.cols), as.factor) |> as.data.frame()
