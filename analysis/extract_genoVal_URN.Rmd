@@ -66,10 +66,10 @@ ap(all.inputs)
 dat = all.inputs$URN
 dim(dat) ## 29714 x 12
 head(dat)
-(traits <- sapply(dat, class) %>% {.[.=="numeric"]} %>% names())
+traits <- c("YLD","PROT","TWT")
+#(traits <- sapply(dat, class) %>% {.[.=="numeric"]} %>% names())
 info.cols <- setdiff(colnames(dat),traits)
 dat <- dat %>% mutate_at(all_of(info.cols), as.factor) |> as.data.frame()
-#dat <- rename(dat, "GID"="line","SW30"="30SSW")
 (miss.dat.perc <- round(100* (nrow(dat) -apply(dat, 2,function(x) sum(!is.na(x)))) /nrow(dat)))
 summ.traits <- as.data.frame(apply(t(apply(dat[,traits],2,summary)),2,round, 1))
 summ.traits$SD <- round(apply(dat[,traits],2,sd,na.rm=TRUE),1)
@@ -88,7 +88,7 @@ for(tr in traits){
          geom_density( alpha=0.5, fill="grey50")+
          ggtitle(tr)+ geom_rug()+ xlab(tr)+
          bigstatsr::theme_bigstatsr(size.rel=0.8))
-
+  
 }
 ```
 Update genotype names
@@ -107,6 +107,7 @@ purrr::map_dbl(dat, n_distinct)
 out <- list()
 dat.noNA <- list()
 dat <- as.data.frame(dat)
+
 for(tr in traits){
   write(paste0(tr,"\n"),stderr())
   dat.noNA[[tr]] <- na.omit(droplevels(dat[,c(tr, "GID","YEAR","LOC")]))
@@ -114,21 +115,27 @@ for(tr in traits){
   if(length(unique(as.character(dat.noNA[[tr]]$YEAR))) < 2){
     next
   } else {
-    glob.form <- paste0(tr, " ~ 1",
-                        " + GID ",
-                        " + YEAR ",
-                        " + (1|LOC) ",
-                        " + (1|YEAR:LOC)"
-
-                        
-    )
-    
-    out[[tr]] <- plantTrialLmmFitCompSel(glob.form=glob.form,
-                                         dat=dat.noNA[[tr]],
-                                         part.comp.sel=c("random","fixed"),
-                                         nb.cores=1, verbose=1,
-                                         saved.file = here("output","lme4",paste0("lme4_save_fit_",tr,"_",par, ".RData"))
-    )
+    p2f.save <- here("output","lme4",paste0("lme4-output_",tr,"-trait.rds"))
+    if(!file.exists(p2f.save)){
+      glob.form <- paste0(tr, " ~ 1",
+                          " + GID ",
+                          " + YEAR ",
+                          " + (1|LOC) ",
+                          " + (1|YEAR:LOC)"
+                          
+                          
+      )
+      
+      out[[tr]] <- plantTrialLmmFitCompSel(glob.form=glob.form,
+                                           dat=dat.noNA[[tr]],
+                                           part.comp.sel=c("random","fixed"),
+                                           nb.cores=1, verbose=1,
+                                           saved.file = here("output","lme4",paste0("lme4_save_fit_",tr,"_",par, ".RData"))
+      )
+      saveRDS(out[[tr]],p2f.save)
+    } else {
+      out[[tr]] <- readRDS(p2f.save)
+    }
     
   }
 }
@@ -149,28 +156,6 @@ dat <- janitor::remove_empty(dat,which=c("rows", "cols"))
 ngeno <- unlist(lapply(dat.noNA,function(x) length(unique(x$GID))))
 ```
 
-
-## Handle case where "geno" is not kept in the final model
-
-```{r refit}
-for(tr in traits[!traits %in% pbm]){
-  if(! "GID" %in% out[[tr]]$best.preds.fix){
-    print(tr)
-    glob.form <- paste0(tr, " ~ 1",
-                        " + GID",
-                        " + YEAR",
-                        " + (1|LOC) ",
-                        " + (1|YEAR:LOC)"
-
-    )
-    
-    out[[tr]] <- try(plantTrialLmmFitCompSel(glob.form=glob.form,
-                                             dat=dat.noNA[[tr]],
-                                             part.comp.sel=c("fixed"),
-                                             nb.cores=1, verbose=0))
-  }
-}
-```
 
 
 

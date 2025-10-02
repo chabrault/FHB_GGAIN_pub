@@ -20,3 +20,4 @@ docs/site_libs/*
 presentation_results_files*
 *.html
 docs/*.html
+output/lme4
