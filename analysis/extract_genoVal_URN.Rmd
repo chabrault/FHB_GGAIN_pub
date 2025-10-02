@@ -215,7 +215,7 @@ Color per YEAR
 
 ```{r}
 for(tr in traits[!traits %in% pbm]){
-  fit.all[[tr]]$YEAR <- as.factor(fit.all[[tr]]$YEAR)
+  fit.all[[tr]]$YEAR <- droplevels(as.factor(fit.all[[tr]]$YEAR))
   x.lim <- max(abs(fit.all[[tr]]$scl.cond.res), na.rm=TRUE)
   g <- ggplot(fit.all[[tr]], aes(x=scl.cond.res, y=fitted,color=YEAR)) +
     geom_point() + theme_bw() + 
@@ -223,11 +223,14 @@ for(tr in traits[!traits %in% pbm]){
     xlab("scaled conditional residuals") +
     ylab("fitted responses") +
     ggtitle(tr) +
-    paletteer::scale_colour_paletteer_d("Polychrome::palette36") +
     geom_vline(xintercept = c(0, -1.96, 1.96),
                linetype="dashed")
+  if(nlevels(fit.all[[tr]]$YEAR) < 10){
+    g <- g+paletteer::scale_colour_paletteer_d("Polychrome::palette36")
+  } else {
+    g <-   g + theme(legend.position="none")
+  }
   plot(g)
-  
 }
 ```
 
