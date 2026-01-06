@@ -52,13 +52,17 @@ t0 <- proc.time()
 input <- readRDS(here("data","all_inputs_URN_URSN_URNFHB.rds"))
 ap(input)
 map(input, \(x) map_dfr(x,n_distinct)) 
+
+# ## remove Fhb5AS prior to 2007
+# input$KASP <- input$KASP |> 
+#   filter(!(QTL.name %in% "Fhb5AS" & FIRST_YEAR < 2007))
 dat <- input$ALL
 dat.fhb <- fread(here("data","dat_FHB_URSN_URNFHB.tsv"))
 traits.ursn <- c("DIS","VSK","DON")
 dat.info <- input$INFO
 map_dbl(dat.info, n_distinct)
 dat.ursn <- input$URSN
-dat.urn.fhb <- input$URN.FHB
+dat.urn.fhb <- filter(input$URN.FHB, YEAR >= 1995)
 
 gid.ursn <- unique(input$URSN$GID)
 gid.urn <- unique(input$URN$GID)
@@ -69,7 +73,7 @@ length(gid.all)
 setdiff(input$URSN$LOC, input$URN$LOC) # 1 location in URSN not in URN FHB
 all(kasp.gid %in% gid.all)
 length(intersect(kasp.gid, gid.all))
-length(intersect(kasp.gid, input$INFO$GID)) # 1286
+length(intersect(kasp.gid, input$INFO$GID)) # 1545
 ```
 
 Key numbers:
@@ -95,6 +99,7 @@ Plot a 3-panels heatmap of the number of genotypes tested in each location-year 
 #                  dat.ursn[,c("GID","LOC","YEAR","NURSERY")])
 dat.exp <- dat |> dplyr::select(GID, LOC, YEAR, NURSERY) 
 loc.info <- fread(here("data","URN_trial_info.csv")) |> rename(LOC=name_short)
+#dat.exp <- dat.exp |> filter(YEAR >= 1995)
 
 dat.exp |> group_by(LOC,YEAR,NURSERY) |> 
   summarize(n=n(),.groups="drop") |> 
@@ -194,7 +199,7 @@ geno.compo <- rbind(data.frame(GID=gid.ursn, NURSERY="URSN"),
 geno.compo <- merge(geno.compo, dat.info[,c("GID","SOURCE","FIRST_YEAR")],
                     by="GID", all.x=TRUE)
 geno.compo |> group_by(SOURCE,NURSERY,FIRST_YEAR) |> 
-  summarise(n=n(),.groups="drop") |> filter(FIRST_YEAR >= 1995) |> 
+  summarise(n=n(),.groups="drop") |>
   ggplot(aes(x=FIRST_YEAR, y=n, fill=SOURCE))+
   facet_wrap(~NURSERY)+
   geom_col(color="white")+ ylab("Number of genotypes") + xlab("First Year")+
@@ -248,6 +253,20 @@ GGally::ggcorr(dat.urn.fhb[,traits.ursn], label=TRUE, label_size=5, geom="tile",
                low="#FF3D7FFF", mid="#E0E4CCFF",high="#69D2E7FF",
                size=6,label_round=2)+
   ggtitle("URN FHB")
+```
+
+```{r}
+ggplot(dat.ursn, aes(x=DIS, y=DON))+
+  geom_point(alpha=0.5)+
+  geom_smooth(method="lm", color="blue")+
+  theme_bigstatsr(size.rel=0.8)+
+  ggtitle("URSN")+
+  xlab("Disease index (DIS)")+
+  ylab("Deoxynivalenol (DON) content (ppm)")
+dat.ursn |> filter(DIS < 15, DON > 15) |> 
+  select(GID, ENV, DIS, DON, VSK) |> 
+  print_table()
+
 ```
 
 

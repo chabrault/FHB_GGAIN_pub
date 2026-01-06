@@ -119,16 +119,6 @@ table(df.qtls.95$NURSERY)
 
 
 
-<!-- # Export -->
-
-<!-- ```{r} -->
-<!-- p2f <- here("output",paste0(pop_code,"_geno_FHB_QTLs_combined.tsv")) -->
-<!-- write.table(file=p2f, df.qtls, sep="\t", quote=FALSE, row.names=FALSE) -->
-<!-- ``` -->
-
-
-
-
 # Allelic frequency
 
 ## For 3 QTLs
@@ -162,7 +152,7 @@ ggplot(dat2plot,aes(x=FIRST_YEAR, y=freq.slid, color=KASP.name))+
   theme_bigstatsr(size.rel=0.8)+
   paletteer::scale_color_paletteer_d("MetBrewer::Tsimshian") +
   scale_y_continuous(labels = scales::percent)+
-  scale_x_continuous(breaks=seq(1925,2020,10), limits=range(dat2plot$FIRST_YEAR))+
+  scale_x_continuous(breaks=seq(1925,2015,10), limits=range(dat2plot$FIRST_YEAR))+
   # gghighlight::gghighlight(line_label_type="ggrepel_label") +
   ylab("Frequency of FHB resistance allele")+ xlab("First year of testing")+
   guides(color=guide_legend(title="KASP marker",nrow=2))+
@@ -173,15 +163,6 @@ ggsave(here("output","figures",paste0(pop_code,"_Fhb1-5-freq_first-year_5-yr-win
        width=8, height=7, scale=0.9)
 
 ```
-
-Exlore Fhb5-IWA6412 bump:
-```{r}
-mas.tabL.FHB |> filter(FIRST_YEAR > 1973 & FIRST_YEAR < 1981) |> 
-  filter(KASP.name %in% "IWA6412",QTL.allele %in% "Fhb5")
-```
-Only James is on wheatpedigree.net. James doesn't have SUMAI 3 in its pedigree.
-
-
 
 ## For Fhb1
 
@@ -276,7 +257,7 @@ ggsave(here("output","figures",paste0(pop_code,"_Fhb1_freq_by-source_first-year_
 
 ### By nursery
 
-```{r fhb1_freq_by_nursery}
+```{r fhb1-5-5a_freq_by_nursery}
 spl.data <- split(df.qtls, df.qtls$NURSERY)
 spl.data$URN <- bind_rows(spl.data$URN, spl.data$BOTH) |> mutate(NURSERY = "URN")
 spl.data$URSN <- bind_rows(spl.data$URSN, spl.data$BOTH) |> mutate(NURSERY = "URSN")
@@ -323,8 +304,44 @@ ggplot(dat2plot,aes(x=FIRST_YEAR, y=freq.slid, color=NURSERY, group=NURSERY, sha
         panel.spacing = unit(0, "lines"),
         panel.grid.major = element_line(colour="grey40", linewidth = 0.05),
         panel.grid.minor.x = element_line(colour="grey75", linewidth = 0.025))
-ggsave(here("output","figures",paste0(pop_code,"_Fhb1_freq_by-nursery_first-year_5-yr-window_v2.png")),
+ggsave(here("output","figures",paste0(pop_code,"_Fhb1-Fhb5-Fhb5AS_freq_by-nursery_",
+                                      "first-year_5-yr-window_v2.png")),
        height=7,width=7,scale=0.9)
+```
+Only for Fhb1
+```{r}
+
+ggplot(filter(dat2plot, QTL.name %in% "Fhb1"),
+       aes(x=FIRST_YEAR, y=freq.slid, color=NURSERY, group=NURSERY, shape=NURSERY))+
+  #facet_wrap(~QTL.name, nrow=3)+lemon::coord_capped_cart(bottom="both")+
+  #lemon::facet_rep_wrap(.~QTL.name, nrow=3,repeat.tick.labels = F)+
+  #ggh4x::facet_wrap2(.~QTL.name, nrow=3,axes = "all", remove_labels = "all")+
+  geom_point(size=3,show.legend=T)+
+  geom_line(lwd=2,alpha=0.5, show.legend=F)+
+  theme_bigstatsr(size.rel=0.85)+
+  scale_color_manual(values = c("URN"="#00BFFF","URSN"="#9A32CD"),name="Nursery")+
+  scale_shape_manual(values=c(16,17), "Nursery") +
+  scale_x_continuous(breaks=seq(1995,2024,5),minor_breaks = seq(1995,2024,1))+
+  guides(color=guide_legend(title="Nursery", 
+                            override.aes=list(shape=c(16,17), size=3)))+
+  # gghighlight::gghighlight(line_label_type="ggrepel_label",calculate_per_facet=T,
+  #                          label_params=list(nudge_x=1)) +
+  scale_y_continuous(labels = scales::percent)+
+  ylab("Frequency of *Fhb1* resistance allele")+
+  xlab("First year of testing")+
+  theme(legend.position="inside",
+        legend.position.inside=c(0.75,0.1),
+        legend.direction="horizontal",
+        legend.text = element_text(size=14),
+        legend.background = element_rect(fill="white",color="grey40"),
+        # plot.background = element_rect(fill=NA),
+        # panel.background = element_rect(fill=NA),
+        axis.title.y = ggtext::element_markdown(),
+        axis.text=element_text(size=12),
+        panel.grid.major = element_line(colour="grey35", linewidth = 0.07),
+        panel.grid.minor.x = element_line(colour="grey70", linewidth = 0.03))
+ggsave(here("output","figures",paste0(pop_code,"_Fhb1_freq_by-nursery_first-year_5-yr-window.png")),
+       height=5,width=7.5,scale=0.9)
 ```
 
 

@@ -64,6 +64,8 @@ file.mtime(p2f)
 dat = fread(p2f, data.table = FALSE)
 dim(dat) ## 12779 x 11
 head(dat)
+dat <- filter(dat, YEAR >= 1995)
+
 purrr::map_dbl(dat, n_distinct)
 (traits <- sapply(dat, class) %>% {.[.=="numeric"]} %>% names())
 info.cols <- setdiff(colnames(dat),traits)
@@ -73,6 +75,7 @@ dat <- dat %>% mutate_at(all_of(info.cols), as.factor)
 summ.traits <- as.data.frame(apply(t(apply(dat[,traits],2,summary)),2,round, 1))
 summ.traits$SD <- round(apply(dat[,traits],2,sd,na.rm=TRUE),1)
 summ.traits$traits <- rownames(summ.traits)
+summ.traits$nobs <- apply(dat[,traits],2,function(x) sum(!is.na(x)))
 print_table(as.data.frame(summ.traits))
 ```
 

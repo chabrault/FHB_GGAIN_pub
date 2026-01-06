@@ -486,8 +486,6 @@ ggcorr(df_blues,label=TRUE,
 ggsave(here("output","figures",paste0(par,"_GenoCorr_",length(traits),"traits.png")))
 ```
 
-Next step: Complete the genotype information in `explo_geno_URN_URSN.Rmd` and study fit info and blues in `analyze_blues_URN_URSN.Rmd`.
-
 # Appendix
 
 ```{r info}
