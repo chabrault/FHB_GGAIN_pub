@@ -1,5 +1,5 @@
 
-This Read Me file was generated on 2025-09-29 by Charlotte Brault
+This Read Me file was generated on 2026-01-07 by Charlotte Brault
 
 
 # General information
@@ -47,12 +47,14 @@ ORCID: 0000-0001-7892-4236
 -   Information about funding sources that supported the collection of the data: U.S Wheat and Barley Scab Initiative, USDA-ARS.
 
 -   Overview of the data (abstract): 
-Fusarium head blight (FHB or scab) is a devastating disease affecting wheat worldwide. 
-In the Northern Great Plains US region, public breeding programs had been addressing FHB, but it became a bigger issue in the 1990s, prompting greater focus on resistance efforts. 
-Harnessing public data from two spring wheat nurseries, this study compares the rate of genetic gain for FHB resistance, examines the frequency of the major FHB quantitative trait loci (QTLs), and evaluates their effect on FHB and a set of agronomic traits. 
-The URN (uniform regional nursery) is used to test variety release candidates with good agronomic qualities, while the URSN (uniform regional scab nursery) is used to facilitate the phenotyping of FHB resistance and to exchange germplasm among the cooperating breeding programs. 
+Fusarium head blight (FHB or scab) is a devastating disease affecting wheat worldwide.
+In the Northern Great Plains U.S growing region, public breeding programs began focusing on disease resistance in the 1990s as it became a major concern for the growers. 
+Harnessing public data from two spring wheat nurseries, this study compares the rate of genetic gain for FHB resistance, examines the frequency of the major FHB quantitative trait loci (QTLs), 
+and evaluates their effect on FHB and a set of agronomic traits. 
+The Uniform Regional nursery (URN) is a long-running trial used to test variety release candidates with good agronomic qualities,
+while the Uniform Regional Scab nursery (URSN) is used to facilitate the phenotyping of FHB resistance and to exchange germplasm among the cooperating breeding programs. 
 We show that FHB resistance has increased significantly over the years for FHB-related traits, with a higher rate for the initially more susceptible URN materials. 
-For example, the average disease index has halved over the last 30 years. The frequency of the resistance QTLs Fhb1, Fhb5, and Fhb5AS has increased over the years, with a higher frequency in URSN materials. 
+For example, the average disease index has halved over the last 30 years. The frequency of the resistance QTLs Fhb1, Fhb5, and Fhb5AS has increased over the years, with a higher frequency in URSN materials.
 Each of the resistance QTL alleles was significantly associated with increased FHB resistance, with up to a 46% decrease for the disease index trait associated with Fhb5. 
 There was no detrimental association between the presence of resistance alleles and important agronomic traits. 
 This work illustrates progress achieved through breeding to provide growers with wheat genotypes possessing improved FHB resistance levels.

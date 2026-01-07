@@ -41,12 +41,12 @@ knitr::include_graphics("../output/figures/URN_URSN_FHB_geneticGain_Yrregression
 
 
 ```{r, echo=FALSE, out.width = '75%', fig.cap='FHB QTL frequency over time in the URN and URSN populations'}
-knitr::include_graphics("../output/figures/URN_URSN_Fhb1_freq_by-nursery_first-year_5-yr-window_v2.png", error = FALSE)
+knitr::include_graphics("../output/figures/URN_URSN_Fhb1-Fhb5-Fhb5AS_freq_by-nursery_first-year_5-yr-window_v2.png", error = FALSE)
 ```
 
 - [Effect of FHB QTLs on FHB and agronomic traits](explore_FHB_QTL_effect_URN-URSN.html). In this script, we study the effect of FHB resistance QTLs on agronomic and FHB traits in the URN and URSN population. 
 
 
 ```{r, echo=FALSE, out.width = '75%', fig.cap='Fhb1 effect on FHB and agronomic traits in the URN and URSN populations'}
-knitr::include_graphics("../output/figures/URN_URSN_Fhb1_effects_6traits_distrib_v4.png", error = FALSE)
+knitr::include_graphics("../output/figures/URN_URSN_Fhb1_effects_6traits_distrib_v5.png", error = FALSE)
 ```
