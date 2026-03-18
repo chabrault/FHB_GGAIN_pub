@@ -25,7 +25,7 @@ suppressPackageStartupMessages(library(GGally)) # pairsplot & parallel
 suppressPackageStartupMessages(library(paletteer)) # plot palette
 suppressPackageStartupMessages(library(janitor)) # formating
 suppressPackageStartupMessages(library(tidyr)) # pivot
-suppressPackageStartupMessages(library(crosstable)) # crosstable
+#suppressPackageStartupMessages(library(crosstable)) # crosstable
 suppressPackageStartupMessages(library(stringr)) # string
 suppressPackageStartupMessages(library(stringdist)) # string distance
 suppressPackageStartupMessages(library(rutilstimflutre)) # LMM devtools timflutre
