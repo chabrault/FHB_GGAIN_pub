@@ -73,7 +73,7 @@ length(gid.all)
 setdiff(input$URSN$LOC, input$URN$LOC) # 1 location in URSN not in URN FHB
 all(kasp.gid %in% gid.all)
 length(intersect(kasp.gid, gid.all))
-length(intersect(kasp.gid, input$INFO$GID)) # 1545
+length(intersect(kasp.gid, input$INFO$GID)) # 1543
 ```
 
 Key numbers:
@@ -126,7 +126,97 @@ dat.exp |> group_by(LOC,YEAR,NURSERY) |>
 ggsave(here("output","figures","URN_URN-FHB_URSN_experimental_design_heatmap.png"), width=8, height=6)
 ```
 
+## Connectivity
 
+For FHB data (URN FHB and URSN), calculate the number of common genotypes between years.
+
+Format inputs
+
+```{r}
+head(dat.fhb)
+table(dat.fhb$NURSERY)
+
+genoYr.URNFHB <- purrr::map_dfr(unique(dat.urn.fhb$YEAR), \(yr) {
+  dat.yr <- dat.urn.fhb |> filter(YEAR == yr) 
+  data.frame(YEAR = yr, uniq_geno = unique(dat.yr$GID))
+})
+
+genoYr.URSN <- purrr::map_dfr(unique(dat.ursn$YEAR), \(yr) {
+  dat.yr <- dat.ursn |> filter(YEAR == yr) 
+  data.frame(YEAR = yr, uniq_geno = unique(dat.yr$GID))
+})
+```
+
+
+Calculate the number of common genotypes for each nursery
+```{r}
+cmon.genoYr.URNFHB <- expand.grid(YEAR1 = unique(dat.urn.fhb$YEAR), 
+                                  YEAR2 = unique(dat.urn.fhb$YEAR)) |> 
+  rowwise() |> 
+  mutate(n_common_geno = length(intersect(genoYr.URNFHB$uniq_geno[genoYr.URNFHB$YEAR == YEAR1],
+                                          genoYr.URNFHB$uniq_geno[genoYr.URNFHB$YEAR == YEAR2])))
+summary(cmon.genoYr.URNFHB$n_common_geno)
+
+cmon.genoYr.URSN <- expand.grid(YEAR1 = unique(dat.ursn$YEAR),
+                                YEAR2 = unique(dat.ursn$YEAR)) |>
+  rowwise() |>
+  mutate(n_common_geno = length(intersect(genoYr.URSN$uniq_geno[genoYr.URSN$YEAR == YEAR1],
+                                          genoYr.URSN$uniq_geno[genoYr.URSN$YEAR == YEAR2])))
+summary(cmon.genoYr.URSN$n_common_geno)
+
+## plot heatmap URN FHB
+ggplot(cmon.genoYr.URNFHB, aes(x=YEAR1, y=YEAR2, fill=n_common_geno))+
+  geom_tile(color="white")+
+  geom_text(aes(label=n_common_geno), size=2)+
+  paletteer::scale_fill_paletteer_c("grDevices::ag_Sunset") +
+  theme_bigstatsr(size.rel=0.8)+
+  labs(x="Year", y="Year", fill="Number of common genotypes")+
+  guides(fill=guide_colorbar(barwidth=15,label.position="bottom"))+
+  theme(legend.direction="horizontal",legend.position="bottom",
+        panel.grid=element_blank(),
+        legend.title.position="top",legend.title = element_text(hjust=0.5,size=12),
+        legend.text = element_text(size=10))
+
+## plot heatmap URSN
+ggplot(cmon.genoYr.URSN, aes(x=YEAR1, y=YEAR2, fill=n_common_geno))+
+  geom_tile(color="white", alpha=0.6)+
+  geom_text(aes(label=n_common_geno), size=2)+
+  paletteer::scale_fill_paletteer_c("grDevices::ag_Sunset") +
+  theme_bigstatsr(size.rel=0.8)+
+  labs(x="Year", y="Year", fill="Number of common genotypes")+
+  guides(fill=guide_colorbar(barwidth=15,label.position="bottom"))+
+  theme(legend.direction="horizontal",legend.position="bottom",
+        panel.grid=element_blank(),
+        legend.title.position="top",legend.title = element_text(hjust=0.5,size=12),
+        legend.text = element_text(size=10))
+
+```
+
+```{r}
+dat2plot <- bind_rows(
+  cmon.genoYr.URNFHB |> mutate(NURSERY="URN FHB"),
+  cmon.genoYr.URSN |> mutate(NURSERY="URSN")
+)
+ggplot(dat2plot, aes(x=YEAR1, y=YEAR2, fill=n_common_geno))+
+  geom_tile(color="white", alpha=0.6)+
+  geom_text(aes(label=n_common_geno), size=2.5)+
+  paletteer::scale_fill_paletteer_c("grDevices::ag_Sunset") +
+  theme_bigstatsr(size.rel=0.8)+
+  scale_x_continuous(breaks=seq(1995,2024,2))+
+  scale_y_continuous(breaks=seq(1995,2024,2))+
+  labs(x="Year", y="Year", fill="Number of common genotypes")+
+  guides(fill=guide_colorbar(barwidth=15,label.position="bottom"))+
+  theme(legend.direction="horizontal",legend.position="bottom",
+        panel.grid=element_blank(),
+        panel.border = element_blank(),
+        axis.text.x = element_text(angle=90, vjust=0.5),
+        legend.title.position="top",legend.title = element_text(hjust=0.5,size=12),
+        legend.text = element_text(size=11),
+        strip.background = element_blank()
+        )+
+  facet_wrap(~NURSERY)
+ggsave(here("output","figures","URN_URN-FHB_URSN_common_genotypes_year_heatmap.png"), width=9, height=7)
+```
 
 ## Distribution
 
@@ -190,6 +280,8 @@ dat.info |> group_by(NURSERY,FIRST_YEAR) |>
 ggsave(here("output","figures","URN_URSN_genotype_composition_firstYear.png"), width=8, height=6)
 
 ```
+
+
 Genotype composition by source for each nursery, including genotypes tested in both nurseries
 ```{r}
 pal <- c("AAFC-CA"="#F5586A",MN="#ffcc33",ND="#2E8B57",SD="#3A5FCD",
@@ -200,6 +292,7 @@ geno.compo <- merge(geno.compo, dat.info[,c("GID","SOURCE","FIRST_YEAR")],
                     by="GID", all.x=TRUE)
 geno.compo |> group_by(SOURCE,NURSERY,FIRST_YEAR) |> 
   summarise(n=n(),.groups="drop") |>
+  filter(FIRST_YEAR >= 1995) |>
   ggplot(aes(x=FIRST_YEAR, y=n, fill=SOURCE))+
   facet_wrap(~NURSERY)+
   geom_col(color="white")+ ylab("Number of genotypes") + xlab("First Year")+
@@ -211,7 +304,6 @@ geno.compo |> group_by(SOURCE,NURSERY,FIRST_YEAR) |>
 ggsave(here("output","figures","URSN_URN_genotype_composition_source_1995-2024.png"),
        width=8, height=5, scale=0.9)
 tabyl(geno.compo, NURSERY, SOURCE)
-
 table(geno.compo$SOURCE)
 ```
 
@@ -225,7 +317,7 @@ corr.nurseries <- c()
 for(tr in traits.ursn){
   
   dat.fhb |>  dplyr::summarise(n = dplyr::n(), .by = c(GID, LOC, YEAR, ENV, NURSERY)) |>
-  dplyr::filter(n > 1L)
+    dplyr::filter(n > 1L)
   dat2plot <- dat.fhb |> dplyr::select(GID, LOC, YEAR, ENV, NURSERY, tr) |>
     tidyr::pivot_wider(names_from = NURSERY, values_from = tr) |> 
     filter(!is.na(URSN) | !is.na(URN_FHB))
@@ -284,6 +376,8 @@ dat.fhb |> group_by(NURSERY, ENV) |> summarize(n=n()) |>
                                  n_min=min(n),
                                  n_max=max(n))
 ```
+
+
 Check if the URSN checks (Wheaton, BacUP and ND2710) were constantly present in the URN FHB population:
 ```{r}
 check.FHB.gid <- c("WHEATON","BACUP","ND2710")
@@ -345,7 +439,7 @@ gt.format <- fit.info |>
   opt_stylize(style = 5, color = 'gray')
 gt.format
 gtsave(gt.format, here("output","figures","table_URN_URSN_lme4_fit-info_all_traits.png"),
-        zoom=2, expand=5)
+       zoom=2, expand=5)
 
 gtsave(gt.format, here("output","figures","table_URN_URSN_lme4_fit-info_all_traits.tex"))
 ```
