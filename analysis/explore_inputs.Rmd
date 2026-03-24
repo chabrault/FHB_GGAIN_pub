@@ -163,33 +163,6 @@ cmon.genoYr.URSN <- expand.grid(YEAR1 = unique(dat.ursn$YEAR),
   mutate(n_common_geno = length(intersect(genoYr.URSN$uniq_geno[genoYr.URSN$YEAR == YEAR1],
                                           genoYr.URSN$uniq_geno[genoYr.URSN$YEAR == YEAR2])))
 summary(cmon.genoYr.URSN$n_common_geno)
-
-## plot heatmap URN FHB
-ggplot(cmon.genoYr.URNFHB, aes(x=YEAR1, y=YEAR2, fill=n_common_geno))+
-  geom_tile(color="white")+
-  geom_text(aes(label=n_common_geno), size=2)+
-  paletteer::scale_fill_paletteer_c("grDevices::ag_Sunset") +
-  theme_bigstatsr(size.rel=0.8)+
-  labs(x="Year", y="Year", fill="Number of common genotypes")+
-  guides(fill=guide_colorbar(barwidth=15,label.position="bottom"))+
-  theme(legend.direction="horizontal",legend.position="bottom",
-        panel.grid=element_blank(),
-        legend.title.position="top",legend.title = element_text(hjust=0.5,size=12),
-        legend.text = element_text(size=10))
-
-## plot heatmap URSN
-ggplot(cmon.genoYr.URSN, aes(x=YEAR1, y=YEAR2, fill=n_common_geno))+
-  geom_tile(color="white", alpha=0.6)+
-  geom_text(aes(label=n_common_geno), size=2)+
-  paletteer::scale_fill_paletteer_c("grDevices::ag_Sunset") +
-  theme_bigstatsr(size.rel=0.8)+
-  labs(x="Year", y="Year", fill="Number of common genotypes")+
-  guides(fill=guide_colorbar(barwidth=15,label.position="bottom"))+
-  theme(legend.direction="horizontal",legend.position="bottom",
-        panel.grid=element_blank(),
-        legend.title.position="top",legend.title = element_text(hjust=0.5,size=12),
-        legend.text = element_text(size=10))
-
 ```
 
 ```{r}
@@ -382,10 +355,18 @@ Check if the URSN checks (Wheaton, BacUP and ND2710) were constantly present in 
 ```{r}
 check.FHB.gid <- c("WHEATON","BACUP","ND2710")
 check.urn.gid <- c("CHRIS","MARQUIS")
+
 urn.fhb.checks <- dat.urn.fhb |> select(GID, LOC,YEAR,ENV) |> 
   filter(GID %in% check.FHB.gid) |> distinct()
 length(setdiff(unique(dat.urn.fhb$ENV),unique(urn.fhb.checks$ENV)))
-dat.urn.fhb |> group_by(GID) |> summarize(n=n()) |> arrange(desc(n)) |> head(n=10)
+length(unique(dat.urn.fhb$ENV))
+
+## top ten most tested genotypes in URN FHB (213 envs)
+dat.urn.fhb |> group_by(GID) |> summarize(n=n()) |> 
+  arrange(desc(n)) |> head(n=10)
+## top ten most tested genotypes in URSN (153 envs)
+dat.ursn |> group_by(GID) |> summarize(n=n()) |> 
+  arrange(desc(n)) |> head(n=10)
 
 urn.fhb.checks <- dat.urn.fhb |> select(GID, LOC,YEAR,ENV) |> 
   filter(GID %in% check.urn.gid) |> distinct()

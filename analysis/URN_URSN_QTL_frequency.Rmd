@@ -420,10 +420,10 @@ gtsummary::tbl_summary(df.qtls, by=QTL.name, include="allele")
 
 
 ```{r qtl_coincidence_fhb1}
-mas.tabL.FHB |> select(QTL.name, KASP.name) |> distinct() |> print_table()
+mas.tabL.FHB |> dplyr::select(QTL.name, KASP.name) |> distinct() |> print_table()
 ## Fhb1
 tmp.qtl <- mas.tabL.FHB |> filter(QTL.name == "Fhb1") |> 
-  select(-QTL.name,-QTL.allele) |> distinct() |> 
+  dplyr::select(-QTL.name,-QTL.allele) |> distinct() |> 
   tidyr::pivot_wider(names_from=KASP.name, values_from=allele) |>
   mutate(`Fhb1-TaHRC-R-HEX-DEL-F`=factor(`Fhb1-TaHRC-R-HEX-DEL-F`, levels=c("Res","Sus","Het","Unk"))) |>
   mutate(`IFA-FM227`=factor(`IFA-FM227`, levels=c("Res","Sus","Het","Unk")))
@@ -436,7 +436,7 @@ gtsummary::tbl_cross(tmp.qtl, row="Fhb1-TaHRC-R-HEX-DEL-F",col="IFA-FM227", perc
 ```{r qtl_coincidence_fhb5}
 ## Fhb5
 tmp.qtl <- mas.tabL.FHB |> filter(QTL.name == "Fhb5") |> 
-  select(-QTL.name,-QTL.allele) |> distinct() |> 
+  dplyr::select(-QTL.name,-QTL.allele) |> distinct() |> 
   tidyr::pivot_wider(names_from=KASP.name, values_from=allele) |>
   mutate(`GENE-3371_56`=factor(`GENE-3371_56`, levels=c("Res","Sus","Het","Unk"))) |>
   mutate(IWA6412=factor(IWA6412, levels=c("Res","Sus","Het","Unk")))
@@ -451,7 +451,7 @@ gtsummary::tbl_cross(tmp.qtl, row="GENE-3371_56",col="IWA6412", percent="cell")
 ```{r qtl_coincidence_Fhb5_2}
 ## coincidence of all Fhb5
 tmp.qtl <- mas.tabL.FHB |> filter(KASP.name %in% c("IWA6412","IWA5528")) |> 
-  select(-QTL.name,-QTL.allele) |> distinct() |> 
+  dplyr::select(-QTL.name,-QTL.allele) |> distinct() |> 
   tidyr::pivot_wider(names_from=KASP.name, values_from=allele) |>
   mutate(IWA5528=factor(IWA5528, levels=c("Res","Sus","Het","Unk"))) |>
   mutate(IWA6412=factor(IWA6412, levels=c("Res","Sus","Het","Unk")))

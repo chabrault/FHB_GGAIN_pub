@@ -60,7 +60,7 @@ Data generated in `extract_genoVal_URN_URSN_FHB.Rmd`.
 ```{r}
 p2f <- here("output",paste0("",par,"_geno_blues_lme4-values.tsv"))
 dat <- fread(p2f, data.table = FALSE)
-dim(dat) ## 1370 x 7
+dim(dat) ## 1327 x 7
 head(dat)
 purrr::map_dbl(dat, n_distinct)
 
@@ -72,7 +72,7 @@ traits <- c("DIS","VSK","DON")
 
 ## Genotype information
 
-```{r}
+```{r geno_info}
 p2f <- here("data","genotype_information_URN_URSN_URNFHB.tsv")
 file.mtime(p2f)
 geno.info <- fread(p2f, data.table = FALSE)
@@ -81,11 +81,14 @@ head(geno.info)
 table(geno.info$NURSERY)
 all(dat$GID %in% geno.info$GID)
 purrr::map_dbl(geno.info, n_distinct)
+
 dat <- merge(geno.info,dat, by="GID", all.x=F, all.y=T)
 setdiff(dat$GID, geno.info$GID) ## no GID missing
-## set he earliest year as 1995
-dat |> filter(FIRST_YEAR < 1995) |> dplyr::select(GID,SOURCE,FIRST_YEAR,NURSERY) |> distinct()
-dat[dat$FIRST_YEAR < 1995,"FIRST_YEAR"] <- 1995
+## set the earliest year as 1995
+dat |> filter(FIRST_YEAR < 1995) |> 
+  dplyr::select(GID,SOURCE,FIRST_YEAR,NURSERY) |> distinct()
+idx <- dat$FIRST_YEAR < 1995
+dat$FIRST_YEAR[idx] <- 1995
 
 
 idx <- grepl("^MT", dat$GID)
@@ -479,10 +482,9 @@ ggsave(here("output","figures","URSN_URN_FHB_BreedPrognoMT_GGAIN_3traits.png"),
 
 ```{r}
 dat.summ |> slice_min(FIRST_YEAR,n=2, by=SOURCE)
-tmp <- dat.summ |> select(-se) |> 
+tmp <- dat.summ |>dplyr::select(-se) |> 
   tidyr::pivot_wider(names_from=trait, values_from=mean) |> ungroup()
 tmp[tmp$FIRST_YEAR %in% c(1995,1997,2024),]
-
 ```
 
 Plot the slope estimates
@@ -607,7 +609,7 @@ gt(df.gt)
 Plot the difference between when MT is excluded or not
 ```{r}
 tr <- "DIS"
-dat2plot <- dat |> select(-INC,-SEV,-HD)|>
+dat2plot <- dat |> dplyr::select(-INC,-SEV,-HD)|>
   tidyr::pivot_longer(cols=all_of(traits), names_to="trait", values_to="value") |> 
   mutate(ISMT=ifelse(SOURCE %in% "MT", TRUE,FALSE)) |> 
   filter(!NURSERY %in% "BOTH")|> 
@@ -640,25 +642,36 @@ ggsave(here("output","figures","URSN_URN_FHB_MT-effect-GGAIN.png"),
 p2f <- here("output","lme4","URN_URSN_FHB_year_effects_fixed_lme4.rds")
 yearEff <- readRDS(p2f)
 ap(yearEff)
+## year effect not selected for DIS
+yearEff$DIS <- NULL
 
 tbl.yrEff <- yearEff |> dplyr::bind_rows(.id="trait") |> 
   filter(trait %in% traits) |>
   tidyr::pivot_longer(cols=-trait,names_to="year", values_to="yearEff") |> 
   mutate(year=as.integer(year), trait=factor(trait,levels=traits)) |> 
+  droplevels() |> 
   filter(year >= 1995, !is.na(yearEff))
 
 tbl.yrEff |> split(tbl.yrEff$trait) |> 
   map(\(df) lm(yearEff ~ year, data = df)) |>
-  map(summary) |> map_dfr(broom::tidy, .id="trait")
+  map(summary) |> map_dfr(broom::tidy, .id="trait") 
+
 
 ggplot(tbl.yrEff, aes(x=year, y=yearEff)) +
   facet_wrap(~trait, scales="free_y")+
-  geom_point(aes(color=trait), size=2.5, alpha=0.8, show.legend=F) +
-  geom_smooth()+ bigstatsr::theme_bigstatsr(size.rel=0.8)+
+  geom_point( size=2.5, alpha=0.8, show.legend=F) +
+  labs(x="Year", y="Estimated year effect") +
+   scale_color_manual(values=c("DIS"="#F8766D","VSK"="#00BA38","DON"="#619CFF"))+
+   scale_x_continuous(breaks=seq(year.range.plt[1],year.range.plt[2],5),
+                      minor_breaks = seq(year.range.plt[1],year.range.plt[2],1))+
+  #geom_smooth()+
+  bigstatsr::theme_bigstatsr(size.rel=0.8)
   # ggpmisc::stat_poly_eq(aes(label = ..eq.label..), 
   #                       formula = y ~ x, parse = TRUE)+
-  ggpmisc::stat_fit_glance(aes(label=sprintf("italic(P)*\"-value = \"*%.3g", 
-                                             after_stat(p.value))), parse = TRUE)
+  # ggpmisc::stat_fit_glance(aes(label=sprintf("italic(P)*\"-value = \"*%.3g", 
+  #                                            after_stat(p.value))), parse = TRUE)
+ggsave(here("output","figures","URSN_URN_FHB_non-genetic-year-effects.png"),
+       width=8, height=7, scale=0.85)
 ```
 
 
@@ -682,7 +695,7 @@ ggsave(here("output","figures","URSN_URN_FHB_corr_genoVal.png"),
 # Study the FHB resistance for each breeding program
 
 ```{r}
-dat.long <- dat |> select(-INC,-SEV,-HD) |> 
+dat.long <- dat |> dplyr::select(-INC,-SEV,-HD) |> 
   tidyr::pivot_longer(cols=traits, names_to="trait", values_to="value")
 ggplot(filter(dat.long, !NURSERY %in% "BOTH", SOURCE %in% c("ND","SD","MN","MT")),
        aes(x=SOURCE, y=value,color=NURSERY))+

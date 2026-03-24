@@ -130,7 +130,8 @@ gv.qtl <- merge(df.qtls, dat, by="GID",  all.x=T, all.y=F)
 ## add genotype information to QTL information
 gv.qtl <- merge(gv.qtl, 
                 dplyr::select(geno.info, -ISCK, -SET),#[,c("GID",setdiff(colnames(geno.info),colnames(df.qtls)))],
-                by="GID", all.x=T, all.y=F)
+                by="GID", all.x=T, all.y=F) 
+table(gv.qtl$SOURCE)
 
 #cb <- cbind(gv.qtl$FIRST_YEAR.x, gv.qtl$FIRST_YEAR.y)
 #gv.qtl$FIRST_YEAR <- coalesce(gv.qtl$FIRST_YEAR.x, gv.qtl$FIRST_YEAR.y)
@@ -147,6 +148,7 @@ print_table(head(gv.qtl))
 
 ## put traits at the end of the table
 gv.qtl <- gv.qtl |> relocate(all_of(traits), .after="FIRST_YEAR")
+gv.qtl$SOURCE[gv.qtl$SOURCE == "OTH"] <- "OTHER"
 ```
 
 
@@ -214,6 +216,13 @@ ggplot(dat2plot,aes(x=SOURCE,y=emmean, ymin=lower.CL, ymax=upper.CL,
 ggsave(here("output","figures",paste0(pop_code,"_Fhb1_effect_by_source.png")),
        height=7,width=13,scale=0.7)
 ```
+## Add breeding program effect
+
+```{r}
+
+```
+
+
 ## Fhb1 effect, first year interaction
 
 ```{r}
@@ -250,7 +259,9 @@ for(tr in FHB.traits){
 
 ## Fhb1 effect on 6 traits
 
-```{r study_fhb1_effect_6traits_v2}
+
+
+```{r study_fhb1_effect_6traits_v2, fig.height=8}
 traits.fhb <- c("DIS","VSK","DON")
 
 plist <- list()
@@ -270,15 +281,20 @@ for(tr in traits.sel){
            allele %in% c("Res","Sus")) |>
     mutate(allele=factor(allele, levels=c("Res","Sus"),
                          labels=c("Resistant","Susceptible"))) |> 
-    mutate(label=factor(ifelse(allele %in% "Resistant","*Fhb1*+","*Fhb1*-"),c("*Fhb1*+","*Fhb1*-")))
-  ## Estimate the effect of Fhb1 on the trait while controlling for the first year
-  fit <- lm(paste0(tr, "~  FIRST_YEAR + allele"), data=dat2plot)
-  
-  print(anova(fit))
-  pval <- anova(fit)[["Pr(>F)"]][2]
-  emm <- as.data.frame(emmeans::emmeans(fit, specs = "allele") )
+    mutate(label=factor(ifelse(allele %in% "Resistant","*Fhb1*+","*Fhb1*-"),c("*Fhb1*+","*Fhb1*-")),
+           SOURCE=as.factor(SOURCE))
+  table(dat2plot$SOURCE)
+  ## Estimate the effect of Fhb1 on the trait while controlling for the first year and source
+  #fit <- lm(paste0(tr, "~  FIRST_YEAR + allele + SOURCE"), data=dat2plot)
+  fit <- lme4::lmer(paste0(tr, "~  FIRST_YEAR + allele + (1|SOURCE)"), data=dat2plot)
+  source_icc <- performance::icc(fit)$ICC_conditional
+  print(car::Anova(fit,test.statistic="F", type = "II"))
+  #pval <- anova(fit)[["Pr(>F)"]][2]
+  pval <- car::Anova(fit,test.statistic="F", type = "II")[["Pr(>F)"]][2]
+  emm <- as.data.frame(emmeans::emmeans(fit, specs = "allele"))
   marginal.means[[tr]] <- emm
-  eta2 <- effectsize::eta_squared(fit)
+  #eta2 <- effectsize::eta_squared(fit)
+  om2 <- effectsize::omega_squared(fit, partial=TRUE)
   
   ## add number of obs
   xlabs <- paste(levels(dat2plot$label),
@@ -304,7 +320,7 @@ for(tr in traits.sel){
     ggsignif::stat_signif(comparisons = list(c("Resistant","Susceptible")), 
                           annotations=sprintf("p = %.2g", pval),
                           vjust=-0.5,y_position = plt.arr$ysignif[tr])+
-    annotate("text",label=paste0("\u03b7\u00b2 = ",round(eta2$Eta2_partial[2],4)),
+    annotate("text",label=paste0("\u03c9\u00b2 = ",round(om2$Omega2_partial[2],4)),
              x=1.5, y=plt.arr$yeta[tr],size=4, color="black")+
     scale_color_viridis_c( name="First year")+
     theme_bigstatsr(size.rel=0.75) +
@@ -320,13 +336,13 @@ plist2 <- list(DIS=plist$DIS,YLD=plist$YLD,VSK=plist$VSK,
                PROT=plist$PROT,DON=plist$DON,TWT=plist$TWT)
 ggarrange(plotlist=plist2, ncol=2, nrow=3,common.legend = TRUE, legend="bottom",
           labels = c("A","D","B","E","C","F"))
-ggsave(here("output","figures",paste0(pop_code,"_Fhb1_effects_6traits_distrib_v4.png")),
+ggsave(here("output","figures",paste0(pop_code,"_Fhb1_effects_6traits_distrib_vRev.png")),
        height=8,width=11,scale=0.85)
-## Export for FHB forum
-ggarrange(plotlist=plist2, ncol=2, nrow=3,
-          common.legend = TRUE, legend="bottom",labels = NULL)
-ggsave(here("output","figures",paste0(pop_code,"_Fhb1_effects_6traits_distrib_v5.png")),
-       height=8,width=11,scale=0.85)
+# ## Export for FHB forum
+# ggarrange(plotlist=plist2, ncol=2, nrow=3,
+#           common.legend = TRUE, legend="bottom",labels = NULL)
+# ggsave(here("output","figures",paste0(pop_code,"_Fhb1_effects_6traits_distrib_v5.png")),
+#        height=8,width=11,scale=0.85)
 ```
 
 
@@ -391,10 +407,10 @@ ggain <- rbind(ggain.urn, ggain.ursn)
 
 tmp <- expand.grid(trait=c("DIS","VSK","DON"),
                    allele=c("Fhb1+","Fhb1-"))
-tmp$y <- c(20,44,32,18,41,29)
+tmp$y <- c(40,44,32,38,41,29)
 ggain<- ggain |> 
   mutate(leg=paste0(allele," slope: ", slope, " [",slope.min,",",slope.max,"]")) |> 
-  left_join(tmp)
+  left_join(tmp, by=c("trait","allele"))
 
 ```
 
@@ -408,6 +424,7 @@ ggplot(dat2plot,aes(x=FIRST_YEAR, y=meanYr, color=allele))+
   facet_grid(forcats::fct_relevel(trait)~NURSERY, scales="free_y")+
   geom_point(aes(size=n)) +
   scale_size_area(max_size=4)+
+  
   geom_text(data=ggain, mapping=aes(x=2015, y=y, label=leg, color=allele),
             size=4, show.legend=F) +
   geom_errorbar(aes(ymin=meanYr-seYr, ymax=meanYr+seYr))+
@@ -453,15 +470,19 @@ for(tr in traits.sel){
            allele %in% c("Res","Sus")) |>
     mutate(allele=factor(allele, levels=c("Res","Sus"),
                          labels=c("Resistant","Susceptible")))|> 
-    mutate(label=factor(ifelse(allele %in% "Resistant","*Fhb5*+","*Fhb5*-"),c("*Fhb5*+","*Fhb5*-")))
-  ## Estimate the effect of Fhb1 on the trait while controlling for the first year
-  fit <- lm(paste0(tr, "~  FIRST_YEAR + allele"), data=dat2plot)
+    mutate(label=factor(ifelse(allele %in% "Resistant","*Fhb5*+","*Fhb5*-"),c("*Fhb5*+","*Fhb5*-")),
+           SOURCE=as.factor(SOURCE))
+  ## Estimate the effect of Fhb1 on the trait while controlling for the first year and source
+  #fit <- lm(paste0(tr, "~  FIRST_YEAR + allele + SOURCE"), data=dat2plot)
+  fit <- lme4::lmer(paste0(tr, "~  FIRST_YEAR + allele + (1|SOURCE)"), data=dat2plot)
   
-  print(anova(fit))
-  pval <- anova(fit)[["Pr(>F)"]][2]
-  emm <- as.data.frame(emmeans::emmeans(fit, specs = "allele") )
+  print(car::Anova(fit,test.statistic="F", type = "II"))
+  #pval <- anova(fit)[["Pr(>F)"]][2]
+  pval <- car::Anova(fit,test.statistic="F", type = "II")[["Pr(>F)"]][2]
+  emm <- as.data.frame(emmeans::emmeans(fit, specs = "allele"))
   marginal.means[[tr]] <- emm
-  eta2 <- effectsize::eta_squared(fit)
+  #eta2 <- effectsize::eta_squared(fit)
+  om2 <- effectsize::omega_squared(fit, partial=TRUE)
   
   ## add number of obs
   xlabs <- paste(levels(dat2plot$label),
@@ -487,7 +508,7 @@ for(tr in traits.sel){
     ggsignif::stat_signif(comparisons = list(c("Resistant","Susceptible")), 
                           annotations=sprintf("p = %.2g", pval),
                           vjust=-0.5,y_position = plt.arr$ysignif[tr])+
-    annotate("text",label=paste0("\u03b7\u00b2 = ",round(eta2$Eta2_partial[2],4)),
+    annotate("text",label=paste0("\u03c9\u00b2 = ",round(om2$Omega2_partial[2],4)),
              x=1.5, y=plt.arr$yeta[tr],size=4, color="black")+
     scale_color_viridis_c( name="First year")+
     theme_bigstatsr(size.rel=0.75) +
@@ -502,7 +523,7 @@ plist2 <- list(DIS=plist$DIS,YLD=plist$YLD,VSK=plist$VSK,
                PROT=plist$PROT,DON=plist$DON,TWT=plist$TWT)
 ggarrange(plotlist=plist2, ncol=2, nrow=3,common.legend = TRUE, legend="bottom",
           labels = c("A","D","B","E","C","F"))
-ggsave(here("output","figures",paste0(pop_code,"_Fhb5_effects_6traits_distrib_v3.png")),
+ggsave(here("output","figures",paste0(pop_code,"_Fhb5_effects_6traits_distrib_vRev.png")),
        height=8,width=11,scale=0.85)
 ```
 
@@ -537,15 +558,20 @@ for(tr in traits.sel){
     mutate(allele=factor(allele, levels=c("Res","Sus"),
                          labels=c("Resistant","Susceptible")))|> 
     mutate(label=factor(ifelse(allele %in% "Resistant","*Fhb5AS*+","*Fhb5AS*-"),
-                        c("*Fhb5AS*+","*Fhb5AS*-")))
+                        c("*Fhb5AS*+","*Fhb5AS*-")),
+           SOURCE=as.factor(SOURCE))
   ## Estimate the effect of Fhb1 on the trait while controlling for the first year
-  fit <- lm(paste0(tr, "~  FIRST_YEAR + allele"), data=dat2plot)
+  ## Estimate the effect of Fhb1 on the trait while controlling for the first year
+  #fit <- lm(paste0(tr, "~  FIRST_YEAR + allele + SOURCE"), data=dat2plot)
+  fit <- lme4::lmer(paste0(tr, "~  FIRST_YEAR + allele + (1|SOURCE)"), data=dat2plot)
   
-  print(anova(fit))
-  pval <- anova(fit)[["Pr(>F)"]][2]
-  emm <- as.data.frame(emmeans::emmeans(fit, specs = "allele") )
+  print(car::Anova(fit,test.statistic="F", type = "II"))
+  #pval <- anova(fit)[["Pr(>F)"]][2]
+  pval <- car::Anova(fit,test.statistic="F", type = "II")[["Pr(>F)"]][2]
+  emm <- as.data.frame(emmeans::emmeans(fit, specs = "allele"))
   marginal.means[[tr]] <- emm
-  eta2 <- effectsize::eta_squared(fit)
+  #eta2 <- effectsize::eta_squared(fit)
+  om2 <- effectsize::omega_squared(fit, partial=TRUE)
   
   ## add number of obs
   xlabs <- paste(levels(dat2plot$label),
@@ -571,7 +597,7 @@ for(tr in traits.sel){
     ggsignif::stat_signif(comparisons = list(c("Resistant","Susceptible")), 
                           annotations=sprintf("p = %.2g", pval),
                           vjust=-0.5,y_position = plt.arr$ysignif[tr])+
-    annotate("text",label=paste0("\u03b7\u00b2 = ",round(eta2$Eta2_partial[2],4)),
+    annotate("text",label=paste0("\u03c9\u00b2 = ",round(om2$Omega2_partial[2],4)),
              x=1.5, y=plt.arr$yeta[tr],size=4, color="black")+
     scale_color_viridis_c( name="First year")+
     theme_bigstatsr(size.rel=0.75) +
@@ -590,7 +616,7 @@ plist2 <- list(DIS=plist$DIS,YLD=plist$YLD,VSK=plist$VSK,
                PROT=plist$PROT,DON=plist$DON,TWT=plist$TWT)
 ggarrange(plotlist=plist2, ncol=2, nrow=3,common.legend = TRUE, legend="bottom",
           labels = c("A","D","B","E","C","F"))
-ggsave(here("output","figures",paste0(pop_code,"_Fhb5AS_effects_6traits_distrib_v4.png")),
+ggsave(here("output","figures",paste0(pop_code,"_Fhb5AS_effects_6traits_distrib_vRev.png")),
        height=8,width=11,scale=0.85)
 ```
 
@@ -627,8 +653,8 @@ for(tr in traits.sel){
            Fhb5=metan::replace_na(Fhb5, replacement="Unk"),
            Fhb5AS=metan::replace_na(Fhb5AS, replacement="Unk"))
   
-  ## Estimate the effect of Fhb1 on the trait while controlling for the first year
-  fit <- lm(paste0(tr, "~ 1+ FIRST_YEAR + Fhb5AS * Fhb1 * Fhb5"), data=dat2fit)
+  ## Estimate the effect of Fhb1 on the trait while controlling for the first year and source
+  fit <- lm(paste0(tr, "~ 1+ FIRST_YEAR + SOURCE + Fhb5AS * Fhb1 * Fhb5"), data=dat2fit)
   fit.step <- step(fit)
   #anova(fit.step)
   #print(summary(fit.step))
@@ -654,11 +680,11 @@ sapply(mod.sel, \(x) broom::glance(x))
 ```
 
 
-## Interaction for TWT
+## Interaction for DON
 
 Analyze interaction effects
 ```{r}
-tr <- "TWT"
+tr <- "DON"
 ## fit two way anova
 mod.sel[[tr]]
 #mod.sel[[tr]]$coefficients
@@ -707,6 +733,8 @@ dat2fit |> group_by(Fhb1,Fhb5,Fhb5AS) |> na.omit() |>
   arrange(Fhb1,Fhb5,Fhb5AS) |> print_table()
 ```
 
+Add this table for all FHB traits?
+
 
 Main effects: Fhb1 is the biggest effect compared to Fhb5 and Fhb5AS.
 Significant interaction betweeb Fhb1 and Fhb5: Fhb5 Res is having more effect when this is the only resistance allele. The combination of the two resistance does not bring further reduction in FHB disease index (?).
@@ -721,7 +749,7 @@ Plot Upset
 ```{r upset_plot,fig.height=7}
 qtls.fhb <- unique(df.qtls$QTL.name)
 
-
+nrow(df.qtls |> filter(QTL.name %in% "Fhb1", allele %in% "Sus")) ## 788
 dat.upset <- df.qtls |> distinct() |> 
   filter(allele %in% c("Res","Sus")) |> #,FIRST_YEAR >=1995) |> 
   tidyr::pivot_wider(names_from=QTL.name, values_from=allele,
