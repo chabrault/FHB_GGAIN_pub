@@ -62,7 +62,7 @@ Data was curated in `create_inputs_explore.Rmd`. [See report](docs/create_inputs
 p2f <- here("data","dat_FHB_URSN_URNFHB.tsv")
 file.mtime(p2f)
 dat = fread(p2f, data.table = FALSE)
-dim(dat) ## 12779 x 11
+dim(dat) ## 12816 x 11
 head(dat)
 dat <- filter(dat, YEAR >= 1995)
 
@@ -76,12 +76,25 @@ summ.traits <- as.data.frame(apply(t(apply(dat[,traits],2,summary)),2,round, 1))
 summ.traits$SD <- round(apply(dat[,traits],2,sd,na.rm=TRUE),1)
 summ.traits$traits <- rownames(summ.traits)
 summ.traits$nobs <- apply(dat[,traits],2,function(x) sum(!is.na(x)))
-print_table(as.data.frame(summ.traits))
+print_table(as.data.frame(cbind(traits,summ.traits)))
 ```
+
+DON key numbers
+```{r}
+dat |> filter(!is.na(DON)) |> 
+  droplevels() |> 
+  summarise(n=n(), #min=min(DON), max=max(DON), mean=mean(DON), median=median(DON), sd=sd(DON),
+            nENvs=length(unique(ENV)),
+            meanGenoByEnv=mean(tapply(GID, ENV, function(x) length(unique(x)))),
+            meanGenoByYear=mean(tapply(GID, YEAR, function(x) length(unique(x)))),
+            nGeno=length(unique(GID)))
+dat.noNADON <- dat |> filter(!is.na(DON)) |> droplevels()
+tapply(dat.noNADON$GID, dat.noNADON$YEAR, function(x) length(unique(x)))
+```
+
 
 Apply transformation 
 ```{r}
-
 transf <- c(DIS="sqrt", VSK="sqrt",SEV="sqrt", INC="squared",DON="log10",HD="none")
 ## apply transformation to ensure normality and homoscedasticity
 dat <- dat |> 

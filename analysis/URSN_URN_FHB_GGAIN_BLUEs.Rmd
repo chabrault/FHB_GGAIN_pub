@@ -665,13 +665,14 @@ ggplot(tbl.yrEff, aes(x=year, y=yearEff)) +
    scale_x_continuous(breaks=seq(year.range.plt[1],year.range.plt[2],5),
                       minor_breaks = seq(year.range.plt[1],year.range.plt[2],1))+
   #geom_smooth()+
-  bigstatsr::theme_bigstatsr(size.rel=0.8)
+  bigstatsr::theme_bigstatsr(size.rel=0.8)+
+  theme(strip.background=element_rect(fill=NA))
   # ggpmisc::stat_poly_eq(aes(label = ..eq.label..), 
   #                       formula = y ~ x, parse = TRUE)+
   # ggpmisc::stat_fit_glance(aes(label=sprintf("italic(P)*\"-value = \"*%.3g", 
   #                                            after_stat(p.value))), parse = TRUE)
 ggsave(here("output","figures","URSN_URN_FHB_non-genetic-year-effects.png"),
-       width=8, height=7, scale=0.85)
+       width=7, height=5, scale=0.85)
 ```
 
 

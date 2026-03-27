@@ -407,7 +407,7 @@ ggain <- rbind(ggain.urn, ggain.ursn)
 
 tmp <- expand.grid(trait=c("DIS","VSK","DON"),
                    allele=c("Fhb1+","Fhb1-"))
-tmp$y <- c(40,44,32,38,41,29)
+tmp$y <- c(44,47,31,40,44,27)
 ggain<- ggain |> 
   mutate(leg=paste0(allele," slope: ", slope, " [",slope.min,",",slope.max,"]")) |> 
   left_join(tmp, by=c("trait","allele"))
@@ -425,14 +425,16 @@ ggplot(dat2plot,aes(x=FIRST_YEAR, y=meanYr, color=allele))+
   geom_point(aes(size=n)) +
   scale_size_area(max_size=4)+
   
-  geom_text(data=ggain, mapping=aes(x=2015, y=y, label=leg, color=allele),
-            size=4, show.legend=F) +
+  
+  
   geom_errorbar(aes(ymin=meanYr-seYr, ymax=meanYr+seYr))+
   scale_x_continuous(breaks=seq(year.range.plt[1],year.range.plt[2],5),
                      limits=year.range.plt,
                      minor_breaks = seq(year.range.plt[1],year.range.plt[2],1))+
   #geom_smooth(method="lm")+
   stat_poly_line(show.legend=F) +
+  geom_label(data=ggain, mapping=aes(x=2015, y=y, label=leg, color=allele),
+            size=4.2, show.legend=F,alpha=0.7, fill="white") +
   theme_bigstatsr(size.rel = 0.8)+
   scale_color_manual(values=c("Fhb1+"="#077756","Fhb1-"="hotpink","Unk"="grey60"),
                      name="Allele")+
@@ -443,7 +445,8 @@ ggplot(dat2plot,aes(x=FIRST_YEAR, y=meanYr, color=allele))+
   labs(x="First year", y="Trait value")+
   theme(legend.position="inside",
         legend.position.inside =c(0.85,0.2),
-        legend.direction = "horizontal")
+        legend.direction = "horizontal",
+        strip.background = element_rect(fill=NA))
 #stat_poly_eq(use_label("eq"),label.x = "right",vstep=0.12)
 ggsave(here("output","figures",paste0(pop_code,"_GGAIN-FHB_with-without-Fhb1.png")),
        height=9,width=11,scale=0.85)
